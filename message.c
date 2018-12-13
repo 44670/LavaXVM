@@ -1,6 +1,6 @@
 #include "define.h"
 
-byte mesCHAR[][8]={
+const byte mesCHAR[][8]={
 	{0x38,0x4c,0xc6,0xc6,0xc6,0x64,0x38,0x00}, //0
 	{0x18,0x38,0x18,0x18,0x18,0x18,0x7e,0x00}, //1
 	{0x7c,0xc6,0x0e,0x3c,0x78,0xe0,0xfe,0x00}, //2
@@ -47,6 +47,8 @@ byte mesCHAR[][8]={
 	
 void mesDrawChar(int c,int x,int y,int color,int bkcolor)
 {
+	return;
+
 	int i,j,mask;
 	char *p;
 
@@ -57,8 +59,9 @@ void mesDrawChar(int c,int x,int y,int color,int bkcolor)
 		case '!':c=0x3f;break;
 	}
 	c-='0';
-	p=ScreenBuffer+(y*8)*320+x*8;
+	
 	for (i=0;i<8;i++) {
+		p = ScreenBuffer + (y * 8 + i)*LCD_WIDTH + x * 8;
 		mask=0x80;
 		for (j=0;j<8;j++) {
 			if (mesCHAR[c][i]&mask)
@@ -68,7 +71,7 @@ void mesDrawChar(int c,int x,int y,int color,int bkcolor)
 			p++;
 			mask>>=1;
 		}
-		p+=312;
+		
 	}
 }
 
@@ -88,7 +91,7 @@ void mesDrawTitle()
 
 void mesDrawTime()
 {
-	extern a32 ramuses,ramusee;
+	extern u32 ramuses,ramusee;
 	int hour,min,sec;
 	char s[20],*p;
 	hour=TotalFrame/(3600*60);

@@ -20,7 +20,7 @@
 extern void update_lcd_0();
 extern void XorLine(int s,int e);
 extern byte wait_key;
-extern a32 TextBuffer;
+extern u32 TextBuffer;
 extern byte curr_RPS,curr_CPR;
 
 int total_file,first_file,curr_file;
@@ -29,8 +29,11 @@ char ext_name[16][16];
 byte attr_mask,attr_val;
 int ext_num;
 
+
 int get_total_files(char *path)
 {
+	return 0;
+#if 0
 	FILE_INFO file_info;
 	HANDLE find_handle;
 	char full_name[MAX_PATH];
@@ -51,7 +54,9 @@ int get_total_files(char *path)
 		}
 	}
 	return total;
+#endif
 }
+
 
 void get_ext_name(char *name,char *ext)
 {
@@ -72,7 +77,7 @@ void get_ext_name(char *name,char *ext)
 	for (i=0;i<8;i++) {
 		c=name[k++];
 		if (c==0) break;
-		ext[i]=toupper(c);
+		ext[i]=toupper((int)c);
 	}
 	ext[i]=0;
 }
@@ -101,8 +106,10 @@ int if_ext_name(char *name)
 	return if_ext(ext);
 }
 
+
 int get_total_files_ex(char *path)
 {
+#if 0
 	FILE_INFO file_info;
 	HANDLE find_handle;
 	char full_name[MAX_PATH];
@@ -125,10 +132,14 @@ int get_total_files_ex(char *path)
 		}
 	}
 	return total;
+#endif
+	return 0;
 }
+
 
 void get_file_name(char *path,int index,char *name)
 {
+#if 0
 	FILE_INFO file_info;
 	HANDLE find_handle;
 	char full_name[MAX_PATH];
@@ -158,11 +169,13 @@ void get_file_name(char *path,int index,char *name)
 			break;
 		}
 	}
+#endif
 	name[0]=0;
 }
 
 void get_file_name_ex(char *path,int index,char *name,int len)
 {
+#if 0
 	FILE_INFO file_info;
 	HANDLE find_handle;
 	char full_name[MAX_PATH];
@@ -194,8 +207,11 @@ void get_file_name_ex(char *path,int index,char *name,int len)
 			break;
 		}
 	}
+#endif
 	name[0]=0;
 }
+
+
 
 void disp_file(char *path)
 {
@@ -327,7 +343,7 @@ void get_ext(char *ext)
 		for (j=0;j<8;j++) {
 			c=ext[k++];
 			if (c==';' || c==0) break;
-			ext_name[i][j]=toupper(c);
+			ext_name[i][j]=toupper((int)c);
 		}
 		ext_name[i][j]=0;
 		if (c==0) break;

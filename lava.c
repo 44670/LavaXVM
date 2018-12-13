@@ -1,5 +1,16 @@
 #include "define.h"
 
+#undef USE_WINDOWS_API
+#ifdef USE_WINDOWS_API
+#pragma warning(disable : 4996)
+#include <windows.h>
+#endif
+
+
+byte ScreenBuffer[LCD_WIDTH*(LCD_HEIGHT * 2 + 16)] ;// __attribute__ ((aligned (4096))) __attribute__ ((nocommon));
+byte lRam[LRAM_SIZE] ;//__attribute__ ((aligned (4096))) __attribute__ ((nocommon));
+byte* pLAVA;
+
 typedef void (*CODES)();
 
 #define LTRUE 0xffffffff
@@ -7,11 +18,11 @@ typedef void (*CODES)();
 
 #define CMDLINE	0x700
 
-a32 TextBuffer,string_stack,eval_stack;
+u32 TextBuffer,string_stack,eval_stack;
 
 byte patbuf[0x400];
 
-word sin90[]={
+const u16 sin90[]={
 	0,18,36,54,71,89,107,125,
 	143,160,178,195,213,230,248,265,
 	282,299,316,333,350,367,384,400,
@@ -26,7 +37,7 @@ word sin90[]={
 	1023,1024,1024
 };
 
-byte crc1[256]={
+const byte crc1[256]={
 	0x0,0x21,0x42,0x63,0x84,0xa5,0xc6,0xe7,
 	0x8,0x29,0x4a,0x6b,0x8c,0xad,0xce,0xef,
 	0x31,0x10,0x73,0x52,0xb5,0x94,0xf7,0xd6,
@@ -60,7 +71,7 @@ byte crc1[256]={
 	0x1f,0x3e,0x5d,0x7c,0x9b,0xba,0xd9,0xf8,
 	0x17,0x36,0x55,0x74,0x93,0xb2,0xd1,0xf0
 };
-byte crc2[256]={
+const byte crc2[256]={
 	0x0,0x10,0x20,0x30,0x40,0x50,0x60,0x70,
 	0x81,0x91,0xa1,0xb1,0xc1,0xd1,0xe1,0xf1,
 	0x12,0x2,0x32,0x22,0x52,0x42,0x72,0x62,
@@ -96,63 +107,71 @@ byte crc2[256]={
 };
 
 char *smode[]={"r","rb","r+","rb+","w","wb","w+","wb+","a","ab","a+","ab+"};
-DWORD modeAccess[]={GENERIC_READ,GENERIC_READ,GENERIC_READ|GENERIC_WRITE,GENERIC_READ|GENERIC_WRITE,
+// Ensure the file is always opened in binary mode
+char *translatedMode[] = { "rb","rb","rb+","rb+","wb","wb","wb+","wb+","ab","ab","ab+","ab+" };
+#define GENERIC_READ                     (0x80000000L)
+#define GENERIC_WRITE                    (0x40000000L)
+#define GENERIC_EXECUTE                  (0x20000000L)
+#define GENERIC_ALL                      (0x10000000L)
+u32 modeAccess[]={GENERIC_READ,GENERIC_READ,GENERIC_READ|GENERIC_WRITE,GENERIC_READ|GENERIC_WRITE,
 	GENERIC_WRITE,GENERIC_WRITE,GENERIC_READ|GENERIC_WRITE,GENERIC_READ|GENERIC_WRITE,
 	GENERIC_WRITE,GENERIC_WRITE,GENERIC_READ|GENERIC_WRITE,GENERIC_READ|GENERIC_WRITE};
+/*
 DWORD modeCreate[]={OPEN_EXISTING,OPEN_EXISTING,OPEN_EXISTING,OPEN_EXISTING,
 	CREATE_ALWAYS,CREATE_ALWAYS,CREATE_ALWAYS,CREATE_ALWAYS,
 	OPEN_ALWAYS,OPEN_ALWAYS,OPEN_ALWAYS,OPEN_ALWAYS};
+	*/
 char FileName[MAX_PATH];
 byte *ascii;//[1536];
 byte *ascii8;//[2048];
 byte *gbfont;//[81*94*24];
 byte *gbfont16;//[81*94*32];
 byte *lPC; //lava程序指针
-byte VRam[0x1000000];//[65536];
 struct TASK task[16]; //任务栈
 int task_lev; //任务级
-byte *lRam;
 byte eval_top;
 byte secret;
-long a1,a3,result;
-long seed;
-a32 string_ptr,local_bp,local_sp;
+s32 a1,a3,result;
+s32 seed;
+u32 string_ptr,local_bp,local_sp;
 int RamBits;
-a32 ramuses,ramusee,ramarm;
-unsigned long timed;
+//#define RamBits (16)
+u32 ramuses,ramusee,ramarm;
+u32 timed;
 int cur_funcid=0;
 int func_stack[1024];
-int func_top;
-COPYDATASTRUCT copydata;
-long d_line;
+int func_top;//COPYDATASTRUCT copydata;
+s32 d_line;
 byte wait_key;
-long delay;
+s32 lDelay;
 int have_pen,have_keypad;
 int pen_x,pen_y;
 
 byte no_buf,lcmd,negative;
-word xx,yy,x0,Y0,x1,Y1;
-a32 m1l;
-word graph_mode,bgcolor,fgcolor;
+u16 xx,yy,x0,Y0,x1,Y1;
+u32 m1l;
+u16 graph_mode,bgcolor,fgcolor;
 byte scr_x,scr_y,scr_mode,curr_RPS,curr_CPR;
-word scr_off;
+u16 scr_off;
 byte small_up,small_down,small_left;
-unsigned long line_mode;
+u32 line_mode;
 byte func_x;
 byte negative_tbl[256];
 byte fhave[3],fmode[3];
-a32 fsize[3];
-a32 foffset[3];
+u32 fsize[3];
+u32 foffset[3];
 int curr_fnum;
-HANDLE fhandle[3];
-HANDLE FileHandle;
+void* fhandle[3];
+void* FileHandle;
 char CD[MAX_PATH];
 char VirtualFullName[MAX_PATH];
-a32 ListFileAddr; 
+u32 ListFileAddr; 
+
+
 
 extern int list_set;
 extern int first_file,curr_file;
-extern unsigned long GetGBCodeByPY( unsigned int pos, byte *InputBuffer, byte *OutBuffer );
+extern u32 GetGBCodeByPY( unsigned int pos, byte *InputBuffer, byte *OutBuffer );
 
 void setscreen(int mode);
 void get_val();
@@ -170,7 +189,7 @@ int f2i(float f)
 
 void verify()
 {
-	a32 t;
+	u32 t;
 	char s[100];
 	static char lev[][5]={"ALL","8K","12K","16K","20K","×"};
 
@@ -229,27 +248,34 @@ void set_sys_ram()
 
 void Adjust_Window(int width,int height,int keypad)
 {
+	printf("Adjust_Windows called. %d %d %d\n", width, height, keypad);
+	/*
 	if (width*2<=320 && height*2<=320) ScreenDouble=1;
 	else ScreenDouble=0;
 	if (width!=ScreenWidth || height!=ScreenHeight || keypad!=have_keypad)
 		SetWindow(width,height);
 	ScreenWidth=width;
-	ScreenHeight=height;
+	ScreenHeight=height;*/
 }
 
 void lavReset()
 {
-	word t1,t2;
+	u16 t1,t2;
 
 	lPC=pLAVA+16;
 	if (*(pLAVA+8)&0x10) RamBits=32;
 	else if (*(pLAVA+8)&0x80) RamBits=24;
 	else RamBits=16;
+	
 	eval_top=0;
 	d_line=-1;
 	ramuses=0xf00000;
 	ramusee=0x0;
 	ramarm=1;
+	memset(lRam, 0, sizeof(lRam));
+	set_sys_ram();
+	string_ptr = string_stack;
+	/*
 	if (RamBits>16) {
 		memset(lRam+0x2000,0,(VRam+sizeof(VRam))-(lRam+0x2000));
 		set_sys_ram();
@@ -258,7 +284,7 @@ void lavReset()
 		memset(&lRam[0x2000],0,0xe000); //清变量区
 		set_sys_ram();
 		string_ptr=string_stack;
-	}
+	}*/
 	bgcolor=0;
 	switch (*(pLAVA+8)&0x60) {
 	case 0x40:
@@ -288,21 +314,23 @@ void lavReset()
 	hardinput_rp=hardinput_wp=0;
 	memset(cur_keyb,0,sizeof(cur_keyb));
 	lav_key=0;
-	delay=0;
+	lDelay=0;
 	wait_key=0;
 	t1=*(pLAVA+9)<<4;
 	if (t1<160) t1=160;
-	if (t1>320) t1=320;
+	if (t1>LCD_WIDTH) t1= LCD_WIDTH;
 	t2=*(pLAVA+10)<<4;
 	if (t2<80) t2=80;
-	if (t2>240) t2=240;
+	if (t2>LCD_HEIGHT) t2= LCD_HEIGHT;
 	Adjust_Window(t1,t2,have_keypad);
 	if (!task_lev) SetSBuffer();
 	line_mode=0;
 	setscreen(0);
+	/*
 	_asm rdtsc
 	_asm mov seed,eax
-	seed|=1;
+	seed|=1;*/
+	seed = platGetTickCount();
 	memset(fhave,0,3);
 	make_negative();
 	strcpy(CD,FcPath);
@@ -318,9 +346,10 @@ void c_exit()
 	for (i=0;i<3;i++) { //关闭所有打开的文件
 		if (fhave[i]) {
 			fhave[i]=0;
-			CloseHandle(fhandle[i]);
+			platFclose(fhandle[i]);
 		}
 	}
+	/*
 	if (task_lev) {
 		task_lev--;
 		lPC=task[task_lev].lPC;
@@ -347,7 +376,7 @@ void c_exit()
 		a1=ret_val;
 		put_val();
 		return;
-	}
+	}*/
 	EmuRunning=0;
 	if (ENDVERIFY) verify();
 }
@@ -366,7 +395,7 @@ void bad_exit()
 	c_exit();
 }
 
-void DispRamErr(a32 s,a32 e)
+void DispRamErr(u32 s,u32 e)
 {
 	char str[100],str2[100];
 	if (RamError) return;
@@ -383,8 +412,8 @@ void DispRamErr(a32 s,a32 e)
 	ramuses=0; //确保无法通过认证
 	bad_exit();
 }
-
-void CheckAddr(a32 s,a32 e,int du)
+/*
+void CheckAddr(u32 s,u32 e,int du)
 {
 	if (RamBits>16) {
 		if (s>=0x2000 && e<0xf00000) {
@@ -413,7 +442,7 @@ void CheckAddr(a32 s,a32 e,int du)
 			if (!(du&1)) DispRamErr(s,e);
 		} else DispRamErr(s,e);
 	}
-}
+}*/
 
 void div0_err()
 {
@@ -432,47 +461,58 @@ void sn_err()
 	;
 }
 
-byte lRamRead(a32 addr)
+#define lRamRead(addr) (lRam[(addr)])
+#define lRamRead2(addr) (*(s16 *)(lRam+(addr)))
+#define lRamRead4(addr) (*(s32 *)(lRam+(addr)))
+
+#define lRamWrite(addr, t) (*(u8 *)(lRam+(addr)) = (t))
+#define lRamWrite2(addr, t) (*(u16 *)(lRam+(addr)) = (t))
+#define lRamWrite4(addr, t) (*(u32 *)(lRam+(addr)) = (t))
+
+/*
+inline byte lRamRead(u32 addr)
 {
 	CheckAddr(addr,addr,7);
+	//printf("read1 %x %x\n", addr, lRam[addr]);
 	return lRam[addr];
 }
 
-short lRamRead2(a32 addr)
+inline s16 lRamRead2(u32 addr)
 {
 	if (addr&1) ramarm=0;
 	CheckAddr(addr,addr+1,7);
-	return *(short *)(lRam+addr);
+	return *(s16 *)(lRam+addr);
 }
 
-long lRamRead4(a32 addr)
+inline s32 lRamRead4(u32 addr)
 {
 	if (addr&3) ramarm=0;
 	CheckAddr(addr,addr+3,7);
-	return *(long *)(lRam+addr);
+	return *(s32 *)(lRam+addr);
 }
 
-void lRamWrite(a32 addr,byte t)
+inline void lRamWrite(u32 addr,byte t)
 {
 	CheckAddr(addr,addr,6);
+	//printf("write1 %x %x\n", addr, t);
 	lRam[addr]=t;
 }
 
-void lRamWrite2(a32 addr,short t)
+inline void lRamWrite2(u32 addr,s16 t)
 {
 	if (addr&1) ramarm=0;
 	CheckAddr(addr,addr+1,6);
-	*(short *)(lRam+addr)=t;
+	*(s16 *)(lRam+addr)=t;
 }
 
-void lRamWrite4(a32 addr,long t)
+inline void lRamWrite4(u32 addr,s32 t)
 {
 	if (addr&3) ramarm=0;
 	CheckAddr(addr,addr+3,6);
-	*(long *)(lRam+addr)=t;
-}
+	*(s32 *)(lRam+addr)=t;
+}*/
 
-void lmemcpy(a32 src,a32 obj,int size,int src_du,int obj_du)
+inline void lmemcpy(u32 src,u32 obj,int size,int src_du,int obj_du)
 {
 	if (size) {
 		if (src_du!=100)
@@ -483,32 +523,32 @@ void lmemcpy(a32 src,a32 obj,int size,int src_du,int obj_du)
 	}
 }
 
-byte getcode()
+inline byte getcode()
 {
 	return *(lPC++);
 }
 
-a32 get_vaddr()
+inline u32 get_vaddr()
 {
-	a32 t;
+	u32 t;
 	t=getcode();
 	t+=getcode()<<8;
 	if (RamBits>16) t+=getcode()<<16;
 	return t;
 }
 
-a32 get_lvaddr()
+inline u32 get_lvaddr()
 {
-	a32 t;
+	u32 t;
 	t=getcode();
 	t+=getcode()<<8;
 	if (RamBits>16) t+=getcode()<<16;
 	return t+local_bp;
 }
 
-a32 get_gaddr()
+inline u32 get_gaddr()
 {
-	a32 t;
+	u32 t;
 	t=getcode();
 	t+=getcode()<<8;
 	if (RamBits>16) t+=getcode()<<16;
@@ -518,9 +558,9 @@ a32 get_gaddr()
 	return t;
 }
 
-a32 get_lgaddr()
+inline u32 get_lgaddr()
 {
-	a32 t;
+	u32 t;
 	t=getcode();
 	t+=getcode()<<8;
 	if (RamBits>16) t+=getcode()<<16;
@@ -531,27 +571,27 @@ a32 get_lgaddr()
 	return t;
 }
 
-void get_val()
+inline void get_val()
 {
 	eval_top-=4;
-	a1=*(long *)(lRam+eval_stack+eval_top);
+	a1=*(s32 *)(lRam+eval_stack+eval_top);
 }
 
-void get_val2()
+inline void get_val2()
 {
 	eval_top-=4;
-	a3=*(long *)(lRam+eval_stack+eval_top);
+	a3=*(s32 *)(lRam+eval_stack+eval_top);
 }
 
-void get_vals()
+inline void get_vals()
 {
 	get_val2();
 	get_val();
 }
 
-void put_val()
+inline void put_val()
 {
-	*(long *)(lRam+eval_stack+eval_top)=a1;
+	*(s32 *)(lRam+eval_stack+eval_top)=a1;
 	eval_top+=4;
 }
 
@@ -568,6 +608,7 @@ void put_string()
 
 void push_char()
 {
+	//printf("push_char %x \n", eval_stack+eval_top);
 	lRam[eval_stack+eval_top++]=getcode();
 	lRam[eval_stack+eval_top++]=0;
 	lRam[eval_stack+eval_top++]=0;
@@ -591,6 +632,7 @@ void push_int()
 
 void push_long()
 {
+	
 	lRam[eval_stack+eval_top++]=getcode();
 	lRam[eval_stack+eval_top++]=getcode();
 	lRam[eval_stack+eval_top++]=getcode();
@@ -615,12 +657,14 @@ void push_lvchar()
 
 void push_vint()
 {
-	a32 t;
+	u32 t;
 	byte t2;
 	t=get_vaddr();
+	//printf("push_vint %x %x %x %x\n", eval_stack+eval_top, t, lRamRead(t), lRamRead(t+1));
 	lRam[eval_stack+eval_top++]=lRamRead(t);
 	t2=lRamRead(t+1);
 	lRam[eval_stack+eval_top++]=t2;
+	
 	if (t2&0x80) {
 		lRam[eval_stack+eval_top++]=0xff;
 		lRam[eval_stack+eval_top++]=0xff;
@@ -632,12 +676,14 @@ void push_vint()
 
 void push_lvint()
 {
-	a32 t;
+	u32 t;
 	byte t2;
 	t=get_lvaddr();
+	//printf("push_lvint %x %x %x %x\n", eval_stack+eval_top, t, lRamRead(t), lRamRead(t+1));
 	lRam[eval_stack+eval_top++]=lRamRead(t);
 	t2=lRamRead(t+1);
 	lRam[eval_stack+eval_top++]=t2;
+	
 	if (t2&0x80) {
 		lRam[eval_stack+eval_top++]=0xff;
 		lRam[eval_stack+eval_top++]=0xff;
@@ -649,7 +695,7 @@ void push_lvint()
 
 void push_vlong()
 {
-	a32 t;
+	u32 t;
 	t=get_vaddr();
 	lRam[eval_stack+eval_top++]=lRamRead(t);
 	lRam[eval_stack+eval_top++]=lRamRead(t+1);
@@ -659,7 +705,7 @@ void push_vlong()
 
 void push_lvlong()
 {
-	a32 t;
+	u32 t;
 	t=get_lvaddr();
 	lRam[eval_stack+eval_top++]=lRamRead(t);
 	lRam[eval_stack+eval_top++]=lRamRead(t+1);
@@ -669,7 +715,9 @@ void push_lvlong()
 
 void push_gchar()
 {
-	lRam[eval_stack+eval_top++]=lRamRead(get_gaddr());
+	// get_gaddr must be called BEFORE eval_stack+eval_top++!
+	u32 t = get_gaddr();
+	lRam[eval_stack+eval_top++]=lRamRead(t);
 	lRam[eval_stack+eval_top++]=0;
 	lRam[eval_stack+eval_top++]=0;
 	lRam[eval_stack+eval_top++]=0;
@@ -677,7 +725,8 @@ void push_gchar()
 
 void push_lgchar()
 {
-	lRam[eval_stack+eval_top++]=lRamRead(get_lgaddr());
+	u32 t = get_lgaddr();
+	lRam[eval_stack+eval_top++]=lRamRead(t);
 	lRam[eval_stack+eval_top++]=0;
 	lRam[eval_stack+eval_top++]=0;
 	lRam[eval_stack+eval_top++]=0;
@@ -685,7 +734,7 @@ void push_lgchar()
 
 void push_gint()
 {
-	a32 t;
+	u32 t;
 	byte t2;
 	t=get_gaddr();
 	lRam[eval_stack+eval_top++]=lRamRead(t);
@@ -702,7 +751,7 @@ void push_gint()
 
 void push_lgint()
 {
-	a32 t;
+	u32 t;
 	byte t2;
 	t=get_lgaddr();
 	lRam[eval_stack+eval_top++]=lRamRead(t);
@@ -719,7 +768,7 @@ void push_lgint()
 
 void push_glong()
 {
-	a32 t;
+	u32 t;
 	t=get_gaddr();
 	lRam[eval_stack+eval_top++]=lRamRead(t);
 	lRam[eval_stack+eval_top++]=lRamRead(t+1);
@@ -729,7 +778,7 @@ void push_glong()
 
 void push_lglong()
 {
-	a32 t;
+	u32 t;
 	t=get_lgaddr();
 	lRam[eval_stack+eval_top++]=lRamRead(t);
 	lRam[eval_stack+eval_top++]=lRamRead(t+1);
@@ -739,7 +788,7 @@ void push_lglong()
 
 void push_ax()
 {
-	a32 t;
+	u32 t;
 	t=get_gaddr();
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -749,7 +798,7 @@ void push_ax()
 
 void push_achar()
 {
-	a32 t;
+	u32 t;
 	t=get_gaddr();
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -764,7 +813,7 @@ void push_achar()
 
 void push_lachar()
 {
-	a32 t;
+	u32 t;
 	t=get_lgaddr();
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -779,7 +828,7 @@ void push_lachar()
 
 void push_aint()
 {
-	a32 t;
+	u32 t;
 	t=get_gaddr();
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -794,7 +843,7 @@ void push_aint()
 
 void push_laint()
 {
-	a32 t;
+	u32 t;
 	t=get_lgaddr();
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -809,7 +858,7 @@ void push_laint()
 
 void push_along()
 {
-	a32 t;
+	u32 t;
 	t=get_gaddr();
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -822,7 +871,7 @@ void push_along()
 
 void push_lalong()
 {
-	a32 t;
+	u32 t;
 	t=get_lgaddr();
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -848,7 +897,7 @@ void push_string()
 
 void push_llong()
 {
-	a32 t;
+	u32 t;
 	t=get_vaddr()+local_bp;
 	lRam[eval_stack+eval_top++]=(byte)(t&0xff);
 	lRam[eval_stack+eval_top++]=(byte)((t>>8)&0xff);
@@ -901,7 +950,7 @@ void push_sub0()
 
 void inc_dec_com()
 {
-	long t;
+	s32 t;
 	get_val2();
 	if (RamBits>16) {
 		t=(a3>>24)&0x7f;
@@ -933,7 +982,7 @@ void inc_save()
 		a3&=0xffff;
 	}
 	if (t==1) lRamWrite(a3,(byte)(a1&0xff));
-	else if (t==2) lRamWrite2(a3,(short)(a1&0xffff));
+	else if (t==2) lRamWrite2(a3,(s16)(a1&0xffff));
 	else lRamWrite4(a3,a1);
 }
 
@@ -1000,13 +1049,14 @@ void cal_idx()
 		break;
 	}
 	if (t2==1) lRamWrite(a3,(byte)(a1&0xff));
-	else if (t2==2) lRamWrite2(a3,(short)(a1&0xffff));
+	else if (t2==2) lRamWrite2(a3,(s16)(a1&0xffff));
 	else lRamWrite4(a3,a1);
 }
 
 void cal_add()
 {
 	get_vals();
+	//printf("add: %d %d %d\n", a1, a3, a1+a3);
 	a1+=a3;
 	put_val();
 }
@@ -1073,6 +1123,7 @@ void cal_lnot()
 void cal_mul()
 {
 	get_vals();
+	//printf("mul: %d %d %d\n", a1, a3, a1*a3);
 	a1*=a3;
 	put_val();
 }
@@ -1107,7 +1158,7 @@ void cal_rshift()
 	get_vals();
 	if (a3<0) a1=0;
 	else if (a3==0) ;
-	else a1=(unsigned long)a1>>a3;
+	else a1=(u32)a1>>a3;
 	put_val();
 }
 
@@ -1161,7 +1212,7 @@ void cal_less()
 
 void c_let()
 {
-	long t,t1;
+	s32 t,t1;
 	get_vals();
 	if (RamBits>16) {
 		if (a1&0x80000000) t1=(a1+local_bp)&0xffffff; //???有可能越界，但也可以不检验
@@ -1173,7 +1224,7 @@ void c_let()
 		t=(a1>>16)&0x7f;
 	}
 	if (t==1) lRamWrite(t1,(byte)(a3&0xff));
-	else if (t==2) lRamWrite2(t1,(short)(a3&0xffff));
+	else if (t==2) lRamWrite2(t1,(s16)(a3&0xffff));
 	else lRamWrite4(t1,a3);
 	a1=a3;
 	put_val();
@@ -1189,7 +1240,7 @@ void c_letx()
 	t&=0x7f;
 	//a1&=0xffffff;
 	if (t==1) lRamWrite(a1,(byte)(a3&0xff));
-	else if (t==2) lRamWrite2(a1,(short)(a3&0xffff));
+	else if (t==2) lRamWrite2(a1,(s16)(a3&0xffff));
 	else lRamWrite4(a1,a3);
 	a1=a3;
 	put_val();
@@ -1268,7 +1319,7 @@ void pop_val()
 
 void c_jmp()
 {
-	long t;
+	s32 t;
 	t=getcode();
 	t+=getcode()<<8;
 	t+=getcode()<<16;
@@ -1315,13 +1366,14 @@ void c_call()
 
 void add_bp()
 {
-	long t;
+	s32 t;
 	byte t2;
 	int i;
 	t=local_bp;
 	local_bp=local_sp;
 	lRamWrite(local_bp+3,(byte)(t&0xff));
 	lRamWrite(local_bp+4,(byte)((t>>8)&0xff));
+	
 	if (RamBits>16) lRamWrite(local_bp+5,(byte)((t>>16)&0xff));
 	t=getcode();
 	t+=getcode()<<8;
@@ -1330,7 +1382,7 @@ void add_bp()
 	//if (local_sp&3) local_sp+=4-(local_sp&3); //令堆栈开始于4字节边界
 	t=getcode()*4;
 	if (t) {
-		eval_top-=(word)t;
+		eval_top-=(u16)t;
 		t2=eval_top;
 		i=0;
 		if (RamBits==32) {
@@ -1354,7 +1406,7 @@ void add_bp()
 
 void sub_bp()
 {
-	long t;
+	s32 t;
 	local_sp=local_bp;
 	t=lRamRead(local_bp);
 	t+=lRamRead(local_bp+1)<<8;
@@ -1452,7 +1504,7 @@ void cal_qrshift()
 {
 	get_val();
 	getint();
-	a1=(unsigned long)a1>>a3;
+	a1=(u32)a1>>a3;
 	put_val();
 }
 
@@ -1530,7 +1582,7 @@ void c_icf()
 void c_fci()
 {
 	get_val();
-	a1=(long)(i2f(a1));
+	a1=(s32)(i2f(a1));
 	put_val();
 }
 
@@ -1710,6 +1762,7 @@ void c_void()
 
 void c_debug()
 {
+	/*
 	int line;
 	line=getcode();
 	line+=getcode()<<8;
@@ -1722,9 +1775,9 @@ void c_debug()
 		copydata.cbData=0x800000;
 		copydata.lpData=lRam;
 		lRam[0]=(byte)(local_bp>>16);
-		SendMessage(hwnd_ide,WM_COPYDATA,(WPARAM)hwnd_main,(LPARAM)&copydata);
-		SendMessage(hwnd_ide,WM_STARSTOP,(WPARAM)line,0);
-	}
+		//SendMessage(hwnd_ide,WM_COPYDATA,(WPARAM)hwnd_main,(LPARAM)&copydata);
+		//SendMessage(hwnd_ide,WM_STARSTOP,(WPARAM)line,0);
+	}*/
 }
 
 void c_funcid()
@@ -1737,7 +1790,7 @@ void c_funcid()
 	cur_funcid=line;
 }
 
-CODES codes[]={
+const CODES codes[]={
 	sn_err,push_char,push_int,push_long,push_vchar,push_vint,push_vlong,
 	push_gchar,push_gint,push_glong,push_achar,push_aint,push_along,push_string,
 	push_lvchar,push_lvint,push_lvlong,push_lgchar,push_lgint,push_lglong,
@@ -1757,6 +1810,25 @@ CODES codes[]={
 	c_debug,c_funcid
 };
 
+const char* codesDesc[] = {
+	"sn_err","push_char","push_int","push_long","push_vchar","push_vint","push_vlong",
+	"push_gchar","push_gint","push_glong","push_achar","push_aint","push_along","push_string",
+	"push_lvchar","push_lvint","push_lvlong","push_lgchar","push_lgint","push_lglong",
+	"push_lachar","push_laint","push_lalong","push_along","push_lalong","push_llong",
+	"push_text","push_graph","push_sub0","cal_inc","cal_dec","cal_INC","cal_DEC",
+	"cal_add","cal_sub","cal_and","cal_or","push_not","cal_xor","cal_land","cal_lor","cal_lnot",
+	"cal_mul","cal_div","cal_mod","cal_lshift","cal_rshift","cal_equ","cal_neq","cal_le","cal_ge","cal_great","cal_less",
+	"c_let","c_ptr","c_cptr","pop_val","c_jmpe","c_jmpn","c_jmp","set_sp","c_call","add_bp","sub_bp",
+	"good_exit","c_preset","push_gbuf","c_secret","c_loadall",
+	"cal_qadd","cal_qsub","cal_qmul","cal_qdiv","cal_qmod","cal_qlshift","cal_qrshift",
+	"cal_qequ","cal_qneq","cal_qgreat","cal_qless","cal_qge","cal_qle",
+	"c_iptr","c_lptr",
+	"c_icf","c_fci","cal_addff","cal_addf","cal_add0f","cal_subff","cal_subf","cal_sub0f",
+	"cal_mulff","cal_mulf","cal_mul0f","cal_divff","cal_divf","cal_div0f","push_sub0f",
+	"cal_lessf","cal_greatf","cal_equf","cal_neqf","cal_lef","cal_gef","c_f0",
+	"c_ciptr","c_clptr","c_lcc","c_lci","c_letx","push_ax","cal_idx","c_pass","c_void",
+	"c_debug","c_funcid"
+};
 void ByteAddr()
 {
 	m1l=yy*LCD_WIDTH+xx;
@@ -1807,18 +1879,19 @@ void put_dot()
 	}
 }
 
-word get_dot()
+u16 get_dot()
 {
 	ByteAddr();
 	return BmpData[m1l];
 }
 
-void write_comm(word x,word y,word width,word height,byte *data)
+void write_comm(u16 x,u16 y,u16 width,u16 height,byte *data)
 {
-	byte tdata[320*240];
+	//printf("%d %d %d %d %x %x\n", x, y, width, height, data[0], data[1]);
+	byte tdata[LCD_WIDTH*LCD_HEIGHT];
 	int i,j;
 	byte t;
-	word widths;
+	u16 widths;
 	int x_bak;
 	static byte msktbl[]={128,64,32,16,8,4,2,1}; 
 	byte *td,*disp,*tt;
@@ -2210,7 +2283,7 @@ void write_comm(word x,word y,word width,word height,byte *data)
 	}
 }
 
-void font_6x12(word x,word y,byte c)
+void font_6x12(u16 x,u16 y,byte c)
 {
 	byte *addr;
 	byte t,t2;
@@ -2265,7 +2338,7 @@ void font_6x12(word x,word y,byte c)
 	write_comm(x,y,6,12,patbuf);
 }
 
-void font_8x16(word x,word y,byte c)
+void font_8x16(u16 x,u16 y,byte c)
 {
 	byte *addr;
 	byte t,t2;
@@ -2329,7 +2402,7 @@ void font_8x16(word x,word y,byte c)
 	write_comm(x,y,8,16,patbuf);
 }
 
-void font_12x12(word x,word y,byte c1,byte c2)
+void font_12x12(u16 x,u16 y,byte c1,byte c2)
 {
 	byte *addr;
 	byte t,t2;
@@ -2387,7 +2460,7 @@ void font_12x12(word x,word y,byte c1,byte c2)
 	write_comm(x,y,12,12,patbuf);
 }
 
-void font_16x16(word x,word y,byte c1,byte c2)
+void font_16x16(u16 x,u16 y,byte c1,byte c2)
 {
 	byte *addr;
 	byte t,t2;
@@ -2449,13 +2522,13 @@ void block_comm()
 	no_buf=a1&0x40;
 	lcmd=a1&3;
 	get_val();
-	Y1=(word)a1;
+	Y1=(u16)a1;
 	get_val();
-	x1=(word)a1;
+	x1=(u16)a1;
 	get_val();
-	Y0=(word)a1;
+	Y0=(u16)a1;
 	get_val();
-	x0=(word)a1;
+	x0=(u16)a1;
 }
 
 void vline()
@@ -2471,7 +2544,7 @@ void hline()
 //调用前必须调整Y0,x0,x1使其满足：
 //Y0<ScreenHeight x0<ScreenWidth x1<ScreenWidth x0<=x1
 {
-	word width;
+	u16 width;
 	byte *p;
 	yy=Y0;
 	xx=x0;
@@ -2529,7 +2602,7 @@ void hline()
 
 void block_check()
 {
-	word t;
+	u16 t;
 	if (Y0>Y1) {
 		t=Y0;
 		Y0=Y1;
@@ -2548,7 +2621,7 @@ void block_check()
 
 int hline_check()
 {
-	word t;
+	u16 t;
 	if (Y0>=ScreenHeight) return 0; //线在屏幕外
 	if (x0>x1) {
 		t=x0;
@@ -2562,7 +2635,7 @@ int hline_check()
 
 void block_draw()
 {
-	word t;
+	u16 t;
 	block_check();
 	t=Y1-Y0+1;
 	while (t) {
@@ -2574,7 +2647,7 @@ void block_draw()
 
 void square_draw()
 {
-	word t;
+	u16 t;
 	block_check();
 	hline();
 	vline();
@@ -2617,7 +2690,7 @@ void cout(byte c)
 void update_lcd_small() //Test 没有考虑反显
 {
 	byte c,c2;
-	unsigned long mask;
+	u32 mask;
 	int i,j,color;
 	if (curr_RPS<=8) mask=0x80;
 	else if (curr_RPS<=16) mask=0x8000;
@@ -2642,10 +2715,10 @@ void update_lcd_small() //Test 没有考虑反显
 		if (mask&line_mode) continue;
 		for (j=0;j<curr_CPR;j++) {
 			c=lRam[TextBuffer+i*curr_CPR+j];
-			if (c<128) font_6x12((word)(j*6+small_left),(word)(i*13+small_up),c);
+			if (c<128) font_6x12((u16)(j*6+small_left),(u16)(i*13+small_up),c);
 			else {
 				c2=lRam[TextBuffer+i*curr_CPR+j+1];
-				font_12x12((word)(j*6+small_left),(word)(i*13+small_up),c,c2);
+				font_12x12((u16)(j*6+small_left),(u16)(i*13+small_up),c,c2);
 				j++;
 			}
 		}
@@ -2655,7 +2728,7 @@ void update_lcd_small() //Test 没有考虑反显
 void update_lcd_large() //Test 没有考虑反显
 {
 	byte c,c2;
-	unsigned long mask;
+	u32 mask;
 	int i,j;
 	if (curr_RPS<=8) mask=0x80;
 	else if (curr_RPS<=16) mask=0x8000;
@@ -2666,10 +2739,10 @@ void update_lcd_large() //Test 没有考虑反显
 		if (mask&line_mode) continue;
 		for (j=0;j<curr_CPR;j++) {
 			c=lRam[TextBuffer+i*curr_CPR+j];
-			if (c<128) font_8x16((word)(j<<3),(word)(i<<4),c);
+			if (c<128) font_8x16((u16)(j<<3),(u16)(i<<4),c);
 			else {
 				c2=lRam[TextBuffer+i*curr_CPR+j+1];
-				font_16x16((word)(j<<3),(word)(i<<4),c,c2);
+				font_16x16((u16)(j<<3),(u16)(i<<4),c,c2);
 				j++;
 			}
 		}
@@ -2686,7 +2759,7 @@ void update_lcd_0()
 void next_arg()
 {
 	func_x+=4;
-	a1=*(long *)(lRam+eval_stack+func_x);
+	a1=*(s32 *)(lRam+eval_stack+func_x);
 }
 
 void printint(int digit,int flag)
@@ -2782,10 +2855,10 @@ void put_dot4(int x0,int y0,int x,int y,int mode)
 	}
 }
 
-void Ellipsex(short x0,short y0,word r1,word r2,int mode)
+void Ellipsex(s16 x0,s16 y0,u16 r1,u16 r2,int mode)
 {
 	int i,j,fxy,fx,fy,incx,incy,temp_x,temp_y;
-	word delta_x,delta_y,distant_a,distant_b,circle_r,dot_start;
+	u16 delta_x,delta_y,distant_a,distant_b,circle_r,dot_start;
 
 	if (mode) for (i=0;i<ScreenHeight;i++) circle_buf[i]=-1;
 	distant_a=r1;
@@ -2857,7 +2930,7 @@ void c_putchar()
 	update_lcd_0();
 }
 
-a32 fenxi_fmt(a32 s,int *digit,int *flag)
+u32 fenxi_fmt(u32 s,int *digit,int *flag)
 {
 	byte c;
 	int have_0,have_fu,total_wei;
@@ -2895,15 +2968,15 @@ a32 fenxi_fmt(a32 s,int *digit,int *flag)
 
 void c_printf()
 {
-	a32 fmt_str,str2;
+	u32 fmt_str,str2;
 	byte c;
 	int digit,flag;
 
 	get_val();
 	eval_top-=(byte)(a1<<2);
 	func_x=eval_top;
-	if (RamBits>16) fmt_str=*(long *)(lRam+eval_stack+eval_top)&0xffffff;
-	else fmt_str=*(word *)(lRam+eval_stack+eval_top);
+	if (RamBits>16) fmt_str=*(s32 *)(lRam+eval_stack+eval_top)&0xffffff;
+	else fmt_str=*(u16 *)(lRam+eval_stack+eval_top);
 	for (;;) {
 		c=lRamRead(fmt_str++);
 		if (c==0) break;
@@ -2920,7 +2993,7 @@ void c_printf()
 			} else if (c=='s') {
 				next_arg();
 				if (RamBits>16) str2=a1&0xffffff;
-				else str2=(word)a1;
+				else str2=(u16)a1;
 				for (;;) {
 					c=lRamRead(str2++);
 					if (c==0) break;
@@ -2948,7 +3021,7 @@ void c_printf()
 
 void c_strcpy()
 {
-	a32 t1,t2;
+	u32 t1,t2;
 	int i;
 	get_val2();
 	get_val();
@@ -2956,8 +3029,8 @@ void c_strcpy()
 		t1=a1&0xffffff;
 		t2=a3&0xffffff;
 	} else {
-		t1=(word)a1;
-		t2=(word)a3;
+		t1=(u16)a1;
+		t2=(u16)a3;
 	}
 	for (i=0;;i++) if (lRamRead(t2+i)==0) break;
 	i++;
@@ -2966,10 +3039,10 @@ void c_strcpy()
 
 void c_strlen()
 {
-	a32 t;
+	u32 t;
 	get_val();
 	if (RamBits>16) t=a1&0xffffff;
-	else t=(word)a1;
+	else t=(u16)a1;
 	for (a1=0;;a1++) if (lRamRead(t+a1)==0) break;
 	put_val();
 }
@@ -3008,29 +3081,31 @@ void c_updatelcd()
 
 void c_writeblock()
 {
-	a32 data;
-	word x,y,width,height;
+	u32 data;
+	u16 x,y,width,height;
 	get_val();
 	if (RamBits>16) data=a1&0xffffff;
-	else data=(word)a1;
+	else data=(u16)a1;
 	get_val();
 	no_buf=a1&0x40;
 	negative=a1&0x20;
 	lcmd=a1&0xf;
 	get_val();
-	height=(word)a1;
+	height=(u16)a1;
 	get_val();
-	width=(word)a1;
+	width=(u16)a1;
 	get_val();
-	y=(word)a1;
+	y=(u16)a1;
 	get_val();
-	x=(word)a1;
+	x=(u16)a1;
 	if (width && height) {
 		if (graph_mode==1)
 			CheckAddr(data,data+((width+7)/8)*height-1,4);
 		else
 			CheckAddr(data,data+((width+1)/2)*height-1,4);
 	}
+	
+
 	write_comm(x,y,width,height,lRam+data);
 }
 
@@ -3042,8 +3117,8 @@ void scroll_to_lcd()
 void c_textout()
 {
 	byte t,c;
-	word font_x,font_y;
-	a32 addr;
+	u16 font_x,font_y;
+	u32 addr;
 	get_val();
 	no_buf=a1&0x40;
 	negative=a1&0x20;
@@ -3051,11 +3126,11 @@ void c_textout()
 	t=(byte)a1;
 	get_val();
 	if (RamBits>16) addr=a1&0xffffff;
-	else addr=(word)a1;
+	else addr=(u16)a1;
 	get_val();
-	font_y=(word)a1;
+	font_y=(u16)a1;
 	get_val();
-	font_x=(word)a1;
+	font_x=(u16)a1;
 	if ((t&0x80)==0) {
 		for (;;) {
 			if (font_x>=ScreenWidth) break;
@@ -3149,18 +3224,18 @@ void c_point()
 	no_buf=(a1&0x40)^0x40;
 	lcmd=a1&3;
 	get_val();
-	yy=(word)a1;
+	yy=(u16)a1;
 	get_val();
-	xx=(word)a1;
+	xx=(u16)a1;
 	put_dot();
 }
 
 void c_getpoint()
 {
 	get_val();
-	yy=(word)a1;
+	yy=(u16)a1;
 	get_val();
-	xx=(word)a1;
+	xx=(u16)a1;
 	no_buf=0x40;
 	a1=get_dot();
 	put_val();
@@ -3168,8 +3243,8 @@ void c_getpoint()
 
 void c_line()
 {
-	word delta_x,delta_y,distance,tt,xerr,yerr;
-	word t;
+	u16 delta_x,delta_y,distance,tt,xerr,yerr;
+	u16 t;
 	int incy;
 	block_comm();
 	no_buf^=0x40;
@@ -3226,13 +3301,13 @@ void c_box()
 	get_val();
 	t=(byte)a1;
 	get_val();
-	Y1=(word)a1;
+	Y1=(u16)a1;
 	get_val();
-	x1=(word)a1;
+	x1=(u16)a1;
 	get_val();
-	Y0=(word)a1;
+	Y0=(u16)a1;
 	get_val();
-	x0=(word)a1;
+	x0=(u16)a1;
 	if (t) block_draw();
 	else square_draw();
 }
@@ -3247,37 +3322,37 @@ void XorLine(int s,int e)
 
 void c_circle()
 {
-	word mode,r,x,y;
+	u16 mode,r,x,y;
 	get_val();
 	no_buf=(a1&0x40)^0x40;
 	lcmd=a1&3;
 	get_val();
-	mode=(word)a1;
+	mode=(u16)a1;
 	get_val();
-	r=(word)a1;
+	r=(u16)a1;
 	get_val();
-	y=(word)a1;
+	y=(u16)a1;
 	get_val();
-	x=(word)a1;
+	x=(u16)a1;
 	Ellipsex(x,y,r,r,mode);
 }
 
 void c_ellipse()
 {
-	word mode,ra,rb,x,y;
+	u16 mode,ra,rb,x,y;
 	get_val();
 	no_buf=(a1&0x40)^0x40;
 	lcmd=a1&3;
 	get_val();
-	mode=(word)a1;
+	mode=(u16)a1;
 	get_val();
-	rb=(word)a1;
+	rb=(u16)a1;
 	get_val();
-	ra=(word)a1;
+	ra=(u16)a1;
 	get_val();
-	y=(word)a1;
+	y=(u16)a1;
 	get_val();
-	x=(word)a1;
+	x=(u16)a1;
 	Ellipsex(x,y,ra,rb,mode);
 }
 
@@ -3376,7 +3451,7 @@ void c_isxdigit()
 
 void c_strcat()
 {
-	a32 t1,t2;
+	u32 t1,t2;
 	byte c;
 	get_val2();
 	get_val();
@@ -3384,8 +3459,8 @@ void c_strcat()
 		t1=a1&0xffffff;
 		t2=a3&0xffffff;
 	} else {
-		t1=(word)a1;
-		t2=(word)a3;
+		t1=(u16)a1;
+		t2=(u16)a3;
 	}
 	for (;;) {
 		if (lRamRead(t1)==0) break;
@@ -3401,12 +3476,12 @@ void c_strcat()
 void c_strchr()
 {
 	byte *p;
-	a32 t1;
+	u32 t1;
 	byte t2;
 	get_val2();
 	get_val();
 	if (RamBits>16) t1=a1&0xffffff;
-	else t1=(word)a1;
+	else t1=(u16)a1;
 	t2=(byte)a3;
 	CheckAddr(t1,t1+strlen(lRam+t1),0);
 	p=strchr(lRam+t1,t2);
@@ -3417,7 +3492,7 @@ void c_strchr()
 
 void c_strcmp()
 {
-	a32 t1,t2;
+	u32 t1,t2;
 	int t;
 	get_val2();
 	get_val();
@@ -3425,8 +3500,8 @@ void c_strcmp()
 		t1=a1&0xffffff;
 		t2=a3&0xffffff;
 	} else {
-		t1=(word)a1;
-		t2=(word)a3;
+		t1=(u16)a1;
+		t2=(u16)a3;
 	}
 	CheckAddr(t1,t1+strlen(lRam+t1),1);
 	CheckAddr(t2,t2+strlen(lRam+t2),1);
@@ -3440,15 +3515,15 @@ void c_strcmp()
 void c_strstr()
 {
 	byte *p;
-	a32 t1,t2;
+	u32 t1,t2;
 	get_val2();
 	get_val();
 	if (RamBits>16) {
 		t1=a1&0xffffff;
 		t2=a3&0xffffff;
 	} else {
-		t1=(word)a1;
-		t2=(word)a3;
+		t1=(u16)a1;
+		t2=(u16)a3;
 	}
 	CheckAddr(t1,t1+strlen(lRam+t1),0);
 	CheckAddr(t2,t2+strlen(lRam+t2),1);
@@ -3478,25 +3553,25 @@ void c_toupper()
 
 void c_memset()
 {
-	a32 len;
+	u32 len;
 	get_val();
 	if (RamBits>16) len=a1&0xffffff;
-	else len=(word)a1;
+	else len=(u16)a1;
 	get_val2();
 	get_val();
 	if (RamBits>16) a1&=0xffffff;
 	else a1&=0xffff;
 	if (len==0) return;
 	CheckAddr(a1,a1+len-1,6);
-	memset(lRam+a1,(word)a3,len);
+	memset(lRam+a1,(u16)a3,len);
 }
 
 void c_memcpy()
 {
-	a32 len;
+	u32 len;
 	get_val();
 	if (RamBits>16) len=a1&0xffffff;
-	else len=(word)a1;
+	else len=(u16)a1;
 	get_val2();
 	get_val();
 	if (RamBits>16) {
@@ -3512,7 +3587,7 @@ void c_memcpy()
 
 void c_sprintf()
 {
-	a32 str1,fmt_str,str2;
+	u32 str1,fmt_str,str2;
 	byte c;
 	char num[20];
 	int i,digit,flag,real_digit;
@@ -3520,11 +3595,11 @@ void c_sprintf()
 	get_val();
 	eval_top-=(byte)(a1<<2);
 	func_x=eval_top;
-	if (RamBits>16) str1=*(long *)(lRam+eval_stack+eval_top)&0xffffff;
-	else str1=*(word *)(lRam+eval_stack+eval_top);
+	if (RamBits>16) str1=*(s32 *)(lRam+eval_stack+eval_top)&0xffffff;
+	else str1=*(u16 *)(lRam+eval_stack+eval_top);
 	next_arg();
 	if (RamBits>16) fmt_str=a1&0xffffff;
-	else fmt_str=(word)a1;
+	else fmt_str=(u16)a1;
 	for (;;) {
 		c=lRamRead(fmt_str++);
 		if (c==0) break;
@@ -3590,7 +3665,7 @@ void c_sprintf()
 			} else if (c=='s') {
 				next_arg();
 				if (RamBits>16) str2=a1&0xffffff;
-				else str2=(word)a1;
+				else str2=(u16)a1;
 				for (;;) {
 					c=lRamRead(str2++);
 					if (c==0) break;
@@ -3606,10 +3681,10 @@ void c_sprintf()
 
 void c_memmove()
 {
-	a32 len;
+	u32 len;
 	get_val();
 	if (RamBits>16) len=a1&0xffffff;
-	else len=(word)a1;
+	else len=(u16)a1;
 	get_val2();
 	get_val();
 	if (RamBits>16) {
@@ -3627,7 +3702,7 @@ void c_memmove()
 
 void c_crc16()
 {
-	a32 t1,t2;
+	u32 t1,t2;
 	byte c1,c2,x;
 	get_val2();
 	get_val();
@@ -3635,8 +3710,8 @@ void c_crc16()
 		t1=a1&0xffffff;
 		t2=a3&0xffffff;
 	} else {
-		t1=(word)a1;
-		t2=(word)a3;
+		t1=(u16)a1;
+		t2=(u16)a3;
 	}
 	c1=0;c2=0;
 	while (t2--) {
@@ -3650,18 +3725,18 @@ void c_crc16()
 
 void c_jiami()
 {
-	a32 str1,str2,len;
+	u32 str1,str2,len;
 	int i;
 	byte c;
 	get_val();
 	if (RamBits>16) str2=a1&0xffffff;
-	else str2=(word)a1;
+	else str2=(u16)a1;
 	get_val2();
 	get_val();
 	if (RamBits>16) str1=a1&0xffffff;
-	else str1=(word)a1;
+	else str1=(u16)a1;
 	if (RamBits>16) len=a3&0xffffff;
-	else len=(word)a3;
+	else len=(u16)a3;
 	i=0;
 	while (len--) {
 		c=lRamRead(str2+i++);
@@ -3761,7 +3836,7 @@ void c_xdraw()
 
 void c_getblock()
 {
-	word width,height;
+	u16 width,height;
 	int i,j;
 	byte t;
 
@@ -3769,19 +3844,19 @@ void c_getblock()
 	get_val();
 	no_buf=a1&0x40;
 	get_val();
-	height=(word)a1;
+	height=(u16)a1;
 	get_val();
 	if (graph_mode==1)
-		width=(word)a1>>3;
+		width=(u16)a1>>3;
 	else if (graph_mode==4)
-		width=(word)(a1&0xfff8)>>1; //使宽度是8的整数倍
+		width=(u16)(a1&0xfff8)>>1; //使宽度是8的整数倍
 	else
-		width=(word)a1;
+		width=(u16)a1;
 	get_val();
-	yy=(word)a1;
+	yy=(u16)a1;
 	get_val();
-	if (graph_mode==8) xx=(word)a1;
-	else xx=(word)(a1&0xfff8); //使xx是8的整数倍
+	if (graph_mode==8) xx=(u16)a1;
+	else xx=(u16)(a1&0xfff8); //使xx是8的整数倍
 	if (width==0 || height==0) return; //容错
 	ByteAddr();
 	if (RamBits>16) a3&=0xffffff;
@@ -3865,14 +3940,14 @@ void c_setgraphmode()
 	get_val();
 	a1&=0xff;
 	if (a1==1 || a1==4 || a1==8) {
-		if (graph_mode!=(word)a1) {
+		if (graph_mode!=(u16)a1) {
 			if (a1==4) {bgcolor=0;fgcolor=15;}
 			else if (a1==8) {bgcolor=0;fgcolor=255;}
-			if ((word)a1==1)
+			if ((u16)a1==1)
 				memset(BmpData,0,LCD_WIDTH*LCD_HEIGHT);
 			else
 				memset(BmpData,bgcolor,LCD_WIDTH*LCD_HEIGHT);
-			graph_mode=(word)a1;
+			graph_mode=(u16)a1;
 			SetPalette();
 		}
 		a1=t;
@@ -4095,62 +4170,83 @@ void c_getword()
 void c_delay()
 {
 	get_val();
-	delay=(a1&0x7fff)*256/1000;
-	_asm rdtsc
-	_asm mov timed,eax
+	lDelay=(a1&0x7fff)*256/1000;
+	timed = platGetTickCount();
 }
 
 void c_getms()
 {
+	a1 = 0;
+#ifdef USE_POSIX_API
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	a1 = (tv.tv_usec / 1000) * 256 / 1000;
+	if (a1 >= 256) a1 = 255;
+#endif
+#ifdef USE_WINDOWS_API
 	SYSTEMTIME stime;
 	GetLocalTime(&stime);
-	a1=stime.wMilliseconds*256/1000;
-	if (a1>=256) a1=255;
+	a1 = stime.wMilliseconds * 256 / 1000;
+	if (a1 >= 256) a1 = 255;
+#endif
+
 	put_val();
+
 }
+
+
 
 void GetDirName(char *fname)
 {	
 	char *p;
-	a32 str;
+	u32 str;
 	int i,t;
 
 	get_val();
 	if (RamBits>16) str=a1&0xffffff;
-	else str=(word)a1;
+	else str=(u16)a1;
 	CheckAddr(str,str+strlen(lRam+str),1);
 	strcpy(fname,lRam+str);
 	for (i=0;;i++) {
-		if (fname[i]=='/') fname[i]='\\';
+		//if (fname[i]=='/') fname[i]='\\';
 		if (fname[i]==0) break;
 	}
-	if (fname[0]=='\\') {
+	if (fname[0]=='/') {
 		strcpy(FileName,FcPath);
 		strcat(FileName,fname+1);
 	} else {
 		strcpy(FileName,CD);
 		strcat(FileName,fname);
 	}
-	GetFullPathName(FileName,250,fname,&p);
+	strcpy(fname, FileName);
+	//GetFullPathName(FileName,250,fname,&p);
 	t=strlen(fname);
-	if (fname[t-1]!='\\') {
-		fname[t]='\\';
+	if (fname[t-1]!='/') {
+		fname[t]='/';
 		fname[t+1]=0;
 	}
 }
 
 void c_chdir()
 {
+
 	char fname[MAX_PATH];
 
 	GetDirName(fname);
+	// TODO: verify if the dir actually exists
+	strcpy(CD, fname);
+	a1 = LTRUE;
+	/*
 	if (strstr(fname,FcPath)==NULL) a1=LFALSE; //Lee 为pc安全,不准访问其它目录
 	else if (SetCurrentDirectory(fname)) {
 		a1=LTRUE;
 		strcpy(CD,fname);
-	} else a1=LFALSE;
+	} else a1=LFALSE;*/
 	put_val();
+
 }
+
+
 
 void c_makedir()
 {
@@ -4158,46 +4254,53 @@ void c_makedir()
 
 	GetDirName(fname);
 	if (strstr(fname,FcPath)==NULL) a1=LFALSE; //Lee 为pc安全,不准访问其它目录
-	else if (CreateDirectory(fname,NULL)) {
+	else if (platFmkdir(fname)) {
 		a1=LTRUE;
 	} else a1=LFALSE;
 	put_val();
 }
 
+
 void get_name()
 {
 	char fname[MAX_PATH];
 	char *p;
-	a32 str;
+	u32 str;
 	int i;
 	get_val();
 	if (RamBits>16) str=a1&0xffffff;
-	else str=(word)a1;
+	else str=(u16)a1;
 	CheckAddr(str,str+strlen(lRam+str),1);
 	strcpy(fname,lRam+str);
+
 	for (i=0;;i++) {
-		if (fname[i]=='/') fname[i]='\\';
+		//if (fname[i]=='/') fname[i]='\\';
 		if (fname[i]==0) break;
 	}
-	if (fname[0]=='\\') {
+	if (fname[0]=='/') {
 		strcpy(FileName,FcPath);
 		strcat(FileName,fname+1);
 	} else {
 		strcpy(FileName,CD);
 		strcat(FileName,fname);
 	}
-	GetFullPathName(FileName,250,fname,&p);
-	if (strstr(fname,FcPath)==NULL) FileName[0]=0; //Lee 为pc安全,不准访问其它目录
+	//GetFullPathName(FileName,250,fname,&p);
+	//if (strstr(fname,FcPath)==NULL) FileName[0]=0; //Lee 为pc安全,不准访问其它目录
 	strcpy(VirtualFullName,fname+strlen(FcPath)-1);
+	/*
 	for (i=0;;i++) {
 		if (VirtualFullName[i]=='\\') VirtualFullName[i]='/';
 		if (VirtualFullName[i]==0) break;
-	}
+	}*/
+
 }
 
 void c_getfilenum()
 {
+
 	get_name();
+	a1 = -1;
+#if 0
 	if (FileName[0]==0) a1=-1;
 	else {
 		a1=GetFileAttributes(FileName);
@@ -4210,17 +4313,22 @@ void c_getfilenum()
 			a1=-1;
 		}
 	}
+#endif
 	put_val();
+
 }
 
 void sys_getfilenum_ex()
 {
-	a32 extbuf;
+
+	u32 extbuf;
 
 	get_val();
-	if (RamBits==16) extbuf=(word)a1;
+	if (RamBits==16) extbuf=(u16)a1;
 	else extbuf=a1&0xffffff;
 	get_name();
+	a1 = -1;
+#if 0
 	if (FileName[0]==0) a1=-1;
 	else {
 		a1=GetFileAttributes(FileName);
@@ -4233,102 +4341,123 @@ void sys_getfilenum_ex()
 			a1=-1;
 		}
 	}
+#endif
 }
 
 void c_findfile()
 {
-	word index,num;
-	a32 namebuf;
+	u16 index,num;
+	u32 namebuf;
 
 	get_val();
-	if (RamBits==16) namebuf=(word)a1;
+	if (RamBits==16) namebuf=(u16)a1;
 	else namebuf=a1&0xffffff;
 	get_val();
-	num=(word)a1;
+	num=(u16)a1;
 	get_val();
-	index=(word)a1;
+	index=(u16)a1;
 	a1=findfile(index,num,(char *)(lRam+namebuf),CD);
 	put_val();
 }
 
 void sys_findfile_ex()
 {
-	word index,num,len;
-	a32 namebuf,extbuf;
+	u16 index,num,len;
+	u32 namebuf,extbuf;
 
 	get_val();
-	if (RamBits==16) extbuf=(word)a1;
+	if (RamBits==16) extbuf=(u16)a1;
 	else extbuf=a1&0xffffff;
 	get_val();
-	len=(word)a1;
+	len=(u16)a1;
 	get_val();
-	if (RamBits==16) namebuf=(word)a1;
+	if (RamBits==16) namebuf=(u16)a1;
 	else namebuf=a1&0xffffff;
 	get_val();
-	num=(word)a1;
+	num=(u16)a1;
 	get_val();
-	index=(word)a1;
+	index=(u16)a1;
 	a1=findfile_ex(index,num,(char *)(lRam+namebuf),CD,len,(char *)(lRam+extbuf));
 }
 
-byte judge_mode()
+char*  getModeString()
 {
-	a32 str;
+	u32 str;
 	byte mode;
 	int i;
 	get_val();
 	if (RamBits>16) str=a1&0xffffff;
-	else str=(word)a1;
+	else str=(u16)a1;
 	CheckAddr(str,str+strlen(lRam+str),1);
+	return lRam + str;
+	/*
 	for (i=0;i<12;i++)
 		if (strcmp(lRam+str,smode[i])==0) break;
 	mode=i+1;
 	if (mode>12) mode=0;
 	return mode;
+	*/
+}
+
+u8 getModeIdByString(char* modeStr) {
+	u8 mode;
+	int i;
+	for (i = 0; i<12; i++)
+		if (strcmp(modeStr, smode[i]) == 0) break;
+	mode = i + 1;
+	if (mode>12) mode = 0;
+	return mode;
 }
 
 void c_fopen()
 {
-	byte mode,this_file;
+	u8 mode;
+	byte this_file;
 	int i;
-	HANDLE fp;
-	mode=judge_mode();
+	FILE* fp;
+	char* modeString = getModeString();
+	mode = getModeIdByString(modeString);
 	get_name();
+
 	if (mode) mode--;
 	else {
-		a1=0;
+		a1 = 0;
 		put_val();
 		return;
 	}
-	for (i=0;i<3;i++) if (fhave[i]==0) break;
-	if (i==3) {
-		a1=0;
+	for (i = 0; i < 3; i++) if (fhave[i] == 0) break;
+	if (i == 3) {
+		a1 = 0;
 		put_val();
 		return;
 	}
-	this_file=i;
-	fmode[this_file]=mode;
-	if (!FileName[0]) fp=INVALID_HANDLE_VALUE;
-	else fp=CreateFile(FileName,modeAccess[mode],0,NULL,modeCreate[mode],FILE_ATTRIBUTE_NORMAL,NULL);
-	if (fp==INVALID_HANDLE_VALUE) {
-		a1=0;
+	this_file = i;
+	fmode[this_file] = mode;
+	if (!FileName[0]) fp = 0;
+	else fp = platFopen(FileName, translatedMode[mode]);
+	if (fp == 0) {
+		a1 = 0;
 		put_val();
 		return;
 	}
-	fhave[this_file]=1;
-	fsize[this_file]=SetFilePointer(fp,0,NULL,FILE_END);
+	fhave[this_file] = 1;
+	platFseek(fp, 0L, PLAT_SEEK_END);
+	fsize[this_file] = platFtell(fp);
+	//fsize[this_file]=SetFilePointer(fp,0,NULL,FILE_END);
 	if (mode>=8) foffset[this_file]=fsize[this_file];
 	else {
 		foffset[this_file]=0;
-		SetFilePointer(fp,0,NULL,FILE_BEGIN);
+		platFseek(fp, 0L, PLAT_SEEK_SET);
 	}
 	fhandle[this_file]=fp;
 	a1=this_file|0x80;
 	put_val();
+
 }
 
 int check_handle()
 {
+
 	byte t;
 	get_val();
 	t=(byte)a1;
@@ -4340,22 +4469,26 @@ int check_handle()
 	} else return 0;
 	curr_fnum=t;
 	return t+1;
+
 }
 
 void c_fclose()
 {
+
 	int t;
 	t=check_handle();
 	if (t) {
-		CloseHandle(FileHandle);
+		platFclose(FileHandle);
 		fhave[curr_fnum]=0;
 	}
+
 }
 
 void c_fseek()
 {
+
 	byte mode;
-	long p;
+	s32 p;
 	get_val();
 	mode=(byte)a1;
 	get_val();
@@ -4375,15 +4508,17 @@ void c_fseek()
 		p+=fsize[curr_fnum];
 		break;
 	}
-	if (p>=0 && p<=(long)fsize[curr_fnum]) {
-		a1=SetFilePointer(FileHandle,p,NULL,FILE_BEGIN);
+	if (p>=0 && p<=(s32)fsize[curr_fnum]) {
+		a1=platFseek(FileHandle,p, PLAT_SEEK_SET);
 		if (a1!=-1) foffset[curr_fnum]=a1;
 	} else a1=-1;
 	put_val();
+
 }
 
 void c_ftell()
 {
+
 	if (!check_handle()) {
 		a1=-1;
 		put_val();
@@ -4391,11 +4526,12 @@ void c_ftell()
 	}
 	a1=foffset[curr_fnum];
 	put_val();
+
 }
 
 void c_fread()
 {
-	a32 len,str;
+	u32 len,str;
 	if (!check_handle()) {
 		eval_top-=12;
 		a1=0;
@@ -4404,17 +4540,18 @@ void c_fread()
 	}
 	get_val();
 	if (RamBits>16) len=a1&0xffffff;
-	else len=(word)a1;
+	else len=(u16)a1;
 	get_val();
 	get_val();
 	if (RamBits>16) str=a1&0xffffff;
-	else str=(word)a1;
+	else str=(u16)a1;
 	if (modeAccess[fmode[curr_fnum]]&GENERIC_READ) {
 		if (foffset[curr_fnum]+len>fsize[curr_fnum])
 			len=fsize[curr_fnum]-foffset[curr_fnum]; //读文件不超过文件尾
 		if (len) {
 			CheckAddr(str,str+len-1,6);
-			if (!ReadFile(FileHandle,lRam+str,len,&a1,NULL)) a1=0;
+			a1 = platFread(FileHandle, lRam + str,len );
+			//if (!ReadFile(FileHandle,lRam+str,len,&a1,NULL)) a1=0;
 			foffset[curr_fnum]+=a1;
 		} else a1=0;
 	} else a1=0;
@@ -4423,7 +4560,7 @@ void c_fread()
 
 void c_fwrite()
 {
-	a32 len,str;
+	u32 len,str;
 	if (!check_handle()) {
 		eval_top-=12;
 		a1=0;
@@ -4432,15 +4569,16 @@ void c_fwrite()
 	}
 	get_val();
 	if (RamBits>16) len=a1&0xffffff;
-	else len=(word)a1;
+	else len=(u16)a1;
 	get_val();
 	get_val();
 	if (RamBits>16) str=a1&0xffffff;
-	else str=(word)a1;
+	else str=(u16)a1;
 	if (modeAccess[fmode[curr_fnum]]&GENERIC_WRITE) {
 		if (len) {
 			CheckAddr(str,str+len-1,7);
-			if (!WriteFile(FileHandle,lRam+str,len,&a1,NULL)) a1=0;
+			a1 = platFwrite(FileHandle, lRam + str, len);
+			//if (!WriteFile(FileHandle,lRam+str,len,&a1,NULL)) a1=0;
 			foffset[curr_fnum]+=a1;
 			if (foffset[curr_fnum]>fsize[curr_fnum])
 			fsize[curr_fnum]=foffset[curr_fnum];
@@ -4464,7 +4602,9 @@ void c_feof()
 void c_rewind()
 {
 	if (check_handle()) {
-		SetFilePointer(FileHandle,0,NULL,FILE_BEGIN);
+		platFseek(FileHandle, 0, PLAT_SEEK_SET);
+
+		//SetFilePointer(FileHandle,0,NULL,FILE_BEGIN);
 		foffset[curr_fnum]=0;
 	}
 }
@@ -4480,7 +4620,8 @@ void c_getc()
 	}
 	if (foffset[curr_fnum]==fsize[curr_fnum]) a1=-1; //结束
 	else if (modeAccess[fmode[curr_fnum]]&GENERIC_READ) {
-		if (!ReadFile(FileHandle,&c,1,&a1,NULL)) a1=0;
+		a1 = platFread(FileHandle, &c, 1);
+		//if (!ReadFile(FileHandle,&c,1,&a1,NULL)) a1=0;
 		if (a1==1) {
 			a1=c;
 			foffset[curr_fnum]++;
@@ -4501,7 +4642,8 @@ void c_putc()
 	get_val();
 	c=(byte)a1;
 	if (modeAccess[fmode[curr_fnum]]&GENERIC_WRITE) {
-		if (!WriteFile(FileHandle,&c,1,&a1,NULL)) a1=0;
+		a1 = platFwrite(FileHandle, &c, 1 );
+		//if (!WriteFile(FileHandle,&c,1,&a1,NULL)) a1=0;
 		if (a1==1) {
 			a1=c;
 			foffset[curr_fnum]++;
@@ -4515,6 +4657,10 @@ void c_putc()
 void c_deletefile()
 {
 	get_name();
+	a1 = LTRUE;
+	platFdelete(FileName);
+	// TODO: check delete error, and proper handle directory
+	/*
 	if (FileName[0]==0) a1=LFALSE;
 	else {
 		if (GetFileAttributes(FileName)&FILE_ATTRIBUTE_DIRECTORY) {
@@ -4524,7 +4670,7 @@ void c_deletefile()
 			if (DeleteFile(FileName)) a1=LTRUE;
 			else a1=LFALSE;
 		}
-	}
+	}*/
 	put_val();
 }
 
@@ -4548,31 +4694,54 @@ void c_setlist()
 	list_set=a3;
 }
 
+
 void c_gettime()
 {
+	time_t now;
+    struct tm* timeinfo;
+    time(&now);
+	timeinfo = localtime(&now);
+	get_val();
+	if (RamBits>16) a1 &= 0xffffff;
+	else a1 &= 0xffff;
+	CheckAddr(a1, a1 + 7, 0);
+	*(u16 *)(lRam+a1)=timeinfo->tm_year + 1900;
+	lRam[a1+2]=(byte)timeinfo->tm_mon + 1;
+	lRam[a1+3]=(byte)timeinfo->tm_mday;
+	lRam[a1+4]=(byte)timeinfo->tm_hour;
+	lRam[a1+5]=(byte)timeinfo->tm_min;
+	lRam[a1+6]=(byte)timeinfo->tm_sec;
+	lRam[a1+7]=(byte)timeinfo->tm_wday;
+#if 0
 	SYSTEMTIME stime;
 	GetLocalTime(&stime);
 	get_val();
 	if (RamBits>16) a1&=0xffffff;
 	else a1&=0xffff;
 	CheckAddr(a1,a1+7,0);
-	*(word *)(lRam+a1)=stime.wYear;
+	*(u16 *)(lRam+a1)=stime.wYear;
 	lRam[a1+2]=(byte)stime.wMonth;
 	lRam[a1+3]=(byte)stime.wDay;
 	lRam[a1+4]=(byte)stime.wHour;
 	lRam[a1+5]=(byte)stime.wMinute;
 	lRam[a1+6]=(byte)stime.wSecond;
 	lRam[a1+7]=(byte)stime.wDayOfWeek;
+#endif
 }
 
 void c_settime()
 {
+	get_val();
+	if (RamBits>16) a1 &= 0xffffff;
+	else a1 &= 0xffff;
+	CheckAddr(a1, a1 + 7, 0);;
+#if 0
 	SYSTEMTIME stime;
 	get_val();
 	if (RamBits>16) a1&=0xffffff;
 	else a1&=0xffff;
 	CheckAddr(a1,a1+7,0);
-	stime.wYear=*(word *)(lRam+a1);
+	stime.wYear=*(u16 *)(lRam+a1);
 	stime.wMonth=lRam[a1+2];
 	stime.wDay=lRam[a1+3];
 	stime.wHour=lRam[a1+4];
@@ -4580,11 +4749,13 @@ void c_settime()
 	stime.wSecond=lRam[a1+6];
 	stime.wDayOfWeek=0;
 	SetLocalTime(&stime);
+#endif
 }
+
 
 void c_exec()
 {
-	long set;
+	s32 set;
 
 	get_val();
 	set=a1;
@@ -4599,6 +4770,11 @@ void c_exec()
 		put_val();
 		return;
 	}
+	/*
+	if (LoadLavOrPacFile(FileName)) {
+		LoadLavOrPacFile("boot.lav");
+	}*/
+	/*
 	if (TaskOpen(FileName)) {
 		put_val();
 		return;
@@ -4626,7 +4802,7 @@ void c_exec()
 	strcpy(lRam+local_sp+CMDLINE,VirtualFullName);
 	strcat(lRam+local_sp+CMDLINE," ");
 	strcat(lRam+local_sp+CMDLINE,lRam+a3);
-	wait_key=3;
+	wait_key=3;*/
 }
 
 void c_getcmdline()
@@ -4640,15 +4816,15 @@ void c_getcmdline()
 
 void FlmDecode()
 {
-	a32 src,obj,end_src;
+	u32 src,obj,end_src;
 	int len,type,i;
 	byte t,t2;
 
 	get_vals();
 	if (RamBits>16) src=a1&0xffffff;
-	else src=(word)a1;
+	else src=(u16)a1;
 	if (RamBits>16) obj=a3&0xffffff;
-	else obj=(word)a3;
+	else obj=(u16)a3;
 	len=lRamRead2(src)&0xffff;
 	type=(len>>13)&7;
 	len&=0x1fff;
@@ -4717,25 +4893,26 @@ void FlmDecode()
 
 void PY2GB()
 {
-	a32 src,obj;
+	u32 src,obj;
 
 	get_vals();
 	if (RamBits>16) src=a1&0xffffff;
-	else src=(word)a1;
+	else src=(u16)a1;
 	if (RamBits>16) obj=a3&0xffffff;
-	else obj=(word)a3;
+	else obj=(u16)a3;
 	get_val();
 	a1=GetGBCodeByPY(a1,lRam+src,lRam+obj);
 }
 
-void WriteTime(FILETIME *timesrc,a32 str)
+/*
+void WriteTime(FILETIME *timesrc,u32 str)
 {
 	WORD fatdate,fattime;
 	FILETIME time;
 
 	FileTimeToLocalFileTime(timesrc,&time);
 	FileTimeToDosDateTime(&time,&fatdate,&fattime);
-	lRamWrite2(str,(word)((fatdate>>9)+1980));
+	lRamWrite2(str,(u16)((fatdate>>9)+1980));
 	lRamWrite(str+2,(byte)((fatdate>>5)&0xf));
 	lRamWrite(str+3,(byte)((fatdate)&0x1f));
 	lRamWrite(str+4,(byte)((fattime>>11)));
@@ -4744,15 +4921,19 @@ void WriteTime(FILETIME *timesrc,a32 str)
 	lRamWrite(str+7,0);
 }
 
+*/
+
+
 void sys_GetFileAttributes()
 {
-	WIN32_FILE_ATTRIBUTE_DATA fa;
-	a32 str;
+	u32 str;
 
 	get_val();
 	if (RamBits>16) str=a1&0xffffff;
 	else str=a1&0xffff;
 	get_name();
+	a1 = 0;
+	/*
 	if (FileName[0]==0) {
 		a1=0;
 		return;
@@ -4770,11 +4951,15 @@ void sys_GetFileAttributes()
 	str+=8;
 	WriteTime(&fa.ftLastAccessTime,str);
 	a1=1;
+	*/
 }
+
+
 
 void c_system()
 {
 	get_val();
+	printf("system: %d\n", a1);
 	switch (a1) {
 	case 0: //GetPID
 		//a1=('L'<<24)+1;
@@ -4823,7 +5008,7 @@ void c_system()
 		sys_getfilenum_ex();
 		break;
 	case 31: //GetTickCount
-		a1=(long)(GetTickCount()*0.256);
+		a1=(s32)(platGetTickCount()*0.256);
 		break;
 	case 32: //PeekMessage
 		get_vals();
@@ -4831,9 +5016,9 @@ void c_system()
 		else a1&=0xffff;
 		CheckAddr(a1,a1+9,0);
 		if (hardinput_rp!=hardinput_wp) {
-			*(word *)(lRam+a1)=hardinput[hardinput_rp].type;
-			*(a32 *)(lRam+a1+2)=hardinput[hardinput_rp].wParam;
-			*(a32 *)(lRam+a1+6)=hardinput[hardinput_rp].lParam;
+			*(u16 *)(lRam+a1)=hardinput[hardinput_rp].type;
+			*(u32 *)(lRam+a1+2)=hardinput[hardinput_rp].wParam;
+			*(u32 *)(lRam+a1+6)=hardinput[hardinput_rp].lParam;
 			if (a3) hardinput_rp++;
 			a1=-1;
 		} else a1=0;
@@ -4849,7 +5034,7 @@ void c_system()
 
 void c_setpalette()
 {
-	a32 addr;
+	u32 addr;
 
 	get_val();
 	if (RamBits>16) addr=a1&0xffffff;
@@ -4863,7 +5048,8 @@ void c_setpalette()
 	put_val();
 }
 
-CODES codes2[]={
+
+const CODES codes2[]={
 	c_putchar,c_getchar,c_printf,c_strcpy,c_strlen,c_setscreen,c_updatelcd,
 	c_delay,c_writeblock,scroll_to_lcd,c_textout,c_block,c_rectangle,
 	c_exit,c_clearscreen,c_abs,c_rand,c_srand,c_locate,c_inkey,c_point,
@@ -4877,6 +5063,22 @@ CODES codes2[]={
 	c_sin,c_cos,c_fill,c_setgraphmode,c_setbgcolor,c_setfgcolor,
 	c_setlist,c_fade,c_exec,c_findfile,c_getfilenum,c_system,c_math,
 	c_setpalette,c_getcmdline
+};
+
+const char* codes2Desc[] = {
+	"c_putchar","c_getchar","c_printf","c_strcpy","c_strlen","c_setscreen","c_updatelcd",
+	"c_delay","c_writeblock","scroll_to_lcd","c_textout","c_block","c_rectangle",
+	"c_exit","c_clearscreen","c_abs","c_rand","c_srand","c_locate","c_inkey","c_point",
+	"c_getpoint","c_line","c_box","c_circle","c_ellipse","c_beep","c_isalnum","c_isalpha",
+	"c_iscntrl","c_isdigit","c_isgraph","c_islower","c_isprint","c_ispunct","c_isspace",
+	"c_isupper","c_isxdigit","c_strcat","c_strchr","c_strcmp","c_strstr","c_tolower",
+	"c_toupper","c_memset","c_memcpy","c_fopen","c_fclose","c_fread","c_fwrite",
+	"c_fseek","c_ftell","c_feof","c_rewind","c_getc","c_putc","c_sprintf","c_makedir",
+	"c_deletefile","c_getms","c_checkkey","c_memmove","c_crc16","c_jiami","c_chdir",
+	"c_filelist","c_gettime","c_settime","c_getword","c_xdraw","c_releasekey","c_getblock",
+	"c_sin","c_cos","c_fill","c_setgraphmode","c_setbgcolor","c_setfgcolor",
+	"c_setlist","c_fade","c_exec","c_findfile","c_getfilenum","c_system","c_math",
+	"c_setpalette","c_getcmdline"
 };
 
 void lavRun()
@@ -4926,6 +5128,7 @@ xxx:
 		}
 		return;
 	} else if (wait_key==3) {
+		/*
 		t=0;
 		for (i=0;i<255;i++) t|=cur_keyb[i]&0x80;
 		if (!t) {
@@ -4933,14 +5136,23 @@ xxx:
 			lRam+=local_sp;
 			lavReset();
 			wait_key=0;
-		}
+		}*/
+		FATAL("wait_key==3");
+		wait_key = 0;
 		return; 
 	}
 	t=getcode();
 	if (t&0x80) {
+		//printf("2 lPC:%08x code: %d %s\n", lPC - 1, t & 0x7f, codes2Desc[t&0x7f]);
 		code=codes2[t&0x7f];
-		(*code)();
+		if (!code) {
+			FATAL_printf("unsupported code! %x\n", t);
+		}
+		else {
+			(*code)();
+		}
 	} else {
+		//printf("lPC:%08x code: %d %s\n", lPC - 1, t & 0x7f, codesDesc[t & 0x7f]);
 		code=codes[t];
 		(*code)();
 		if (xx--) goto xxx;

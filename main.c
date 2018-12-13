@@ -1,118 +1,61 @@
-#include	"resource.h"
+
 #include	"define.h"
 
+
+
+#define MAX_PATH (512)
+
 char *CommandLine;
-HWND hwnd_main;
-HWND hwnd_ide=0;
-HINSTANCE hInstan;
-HMENU hMenu;
-OPENFILENAME ofn;
-char FcPath[MAX_PATH];
-char Ini[MAX_PATH];
-char BmpPath[MAX_PATH];
-char CheatPath[MAX_PATH];
-char RomPath[MAX_PATH];
+SDL_Surface *screen;
+
+#ifdef USE_SDL
+char* FcPath = "./";
+char* BmpPath = "./bmp";
+char* CheatPath = "./cheat";
+char* RomPath = "./";
+#endif
+
+#ifdef USE_ESP32
+char* FcPath = "/sd/";
+char* BmpPath = "/sd/bmp/";
+char* CheatPath = "/sd/cheat";
+char* RomPath = "/sd/";
+#endif
+
 char RomName[MAX_PATH];
-char *pRomName;
+char* pRomName;
 unsigned long FREQ;
 unsigned long FREQ60,FREQ256;
-int TVSCAN,GRAY,ENDVERIFY,CHECKRAM,CHEATUSE;
+int TVSCAN,GRAY,ENDVERIFY,CHEATUSE;
 int EmuRunning,PauseFlag,RamError;
 int Frame;
 int CurFrame,TotalFrame;
 int stop_line=-1,stop_func,sline[256],sline_num;
 unsigned long timel,times,IdleParam;
-byte *pAllLAVA,*pLAVA,*pNextLAVA;
+// pLAVA: pointer to current lava rom
+//byte *pAllLAVA,*pLAVA,*pNextLAVA;
 byte old_keyb[256],cur_keyb[256];
 struct MESSAGE hardinput[256]; //LavaX虚拟机的硬件输入消息队列
 byte hardinput_rp,hardinput_wp; //硬件输入消息队列的读写指针
 byte lav_key;
 byte KeyID;
-BOOL KeyPress;
-LRESULT CALLBACK WndProc(HWND,UINT,WPARAM,LPARAM);
+
+//HWND hwnd_main, hwnd_ide;
+
+
 void EmuRun();
 void FileOpenX();
 
-void GetFcePath()
-{
-	char *p,*p2;
 
-	GetModuleFileName(GetModuleHandle(NULL),FcPath,MAX_PATH);
-	p=FcPath;
-	while (*p) {
-		if (*p=='\\')
-			p2=p;
-		p++;
-	}
-	*(p2+1)=0;
-}
 
-unsigned long GetMHz()
-{
-	unsigned long value;
-	LARGE_INTEGER freq,cs,ce,ts,te;
-	
-	QueryPerformanceFrequency(&freq);
-
-	QueryPerformanceCounter(&cs);
-	_asm rdtsc
-	_asm mov ts.LowPart,eax
-	_asm mov ts.HighPart,edx
-	Sleep(1000);
-	QueryPerformanceCounter(&ce);
-	_asm rdtsc
-	_asm mov te.LowPart,eax
-	_asm mov te.HighPart,edx
-
-	value=(unsigned long)((te.QuadPart-ts.QuadPart)/((ce.QuadPart-cs.QuadPart)*1000000/freq.QuadPart));
-
-	return value;
-}
-
-int GetIdleParam()
-{
-	int i,t;
-	LARGE_INTEGER ts,te;
-
-	_asm rdtsc
-	_asm mov ts.LowPart,eax
-	_asm mov ts.HighPart,edx
-	for (i=0;i<100;i++) Sleep(1);
-	_asm rdtsc
-	_asm mov te.LowPart,eax
-	_asm mov te.HighPart,edx
-	t=(int)(((te.QuadPart-ts.QuadPart)/FREQ+5000)/10000);
-	if (t<30) return 9;
-	return 90;
-}
 
 static CenterWindow()
 {
-	RECT rect;
-	int x,y;
-	GetWindowRect(hwnd_main,&rect);
-	x=(GetSystemMetrics(SM_CXFULLSCREEN)-rect.right+rect.left)/2;
-	y=(GetSystemMetrics(SM_CYFULLSCREEN)-rect.bottom+rect.top)/2;
-	SetWindowPos(hwnd_main,0,x,y,0,0,SWP_NOSIZE|SWP_NOZORDER);
-	InvalidateRect(hwnd_main,NULL,FALSE);
 }
 
 void SetWindow(int width,int height)
 {
-	RECT rect;
-	int x,y;
-	int xx,yy;
-	
-	xx=GetSystemMetrics(SM_CXFIXEDFRAME)*2;
-	yy=GetSystemMetrics(SM_CXFIXEDFRAME)*2+GetSystemMetrics(SM_CYMENU)+GetSystemMetrics(SM_CYCAPTION);
-	GetWindowRect(hwnd_main,&rect);
-	x=(GetSystemMetrics(SM_CXFULLSCREEN)-320-xx)/2;
-	if (ScreenDouble) height*=2;
-	if (have_keypad) height+=yy+24+160;
-	else height+=yy+16;
-	y=(GetSystemMetrics(SM_CYFULLSCREEN)-height)/2;
-	SetWindowPos(hwnd_main,0,x,y,xx+320,height,SWP_NOZORDER);
-	InvalidateRect(hwnd_main,NULL,FALSE);
+	printf("SetWindow: %d %d\n", width, height);
 }
 
 static void CloseRom()
@@ -121,50 +64,57 @@ static void CloseRom()
 	EmuRunning=0; //释放ROM所占内存
 	PauseFlag=1;
 	mesDrawTitle();
-	InvalidateRect(hwnd_main,NULL,FALSE);
+
 }
 
-int getnumber(char *p)
-{
-	int val,t;
-	val=0;
-	for (;;) {
-		t=*p;
-		p++;
-		if (t<'0' || t>'9') break;
-		val=val*10+t-'0';
-	}
-	return val;
-}
+
+
 
 void RomReset()
 {
-	//c_exit();
 	RamError=0;
 	CurFrame=0;
 	TotalFrame=0;
-	memset(BmpData,0,320*ScreenHeight); //清屏
-	memset(ScreenBuffer,0,320*8);
+	//memset(BmpData,0,320*ScreenHeight); //清屏
+	//memset(ScreenBuffer,0,320*8);
 	lavReset();
 }
 
-int APIENTRY WinMain(HINSTANCE hInstance,
-                     HINSTANCE hPrevInstance,
-                     LPSTR     lpCmdLine,
-                     int       nCmdShow)
+byte* getLVMBinPointer() {
+	FILE *f = fopen("LVM.bin", "rb");
+	int fileSize = 454450;
+	byte* buf = malloc(fileSize);
+	fread(buf, 454450 , 1, f);
+	return buf;
+}
+#undef main
+void WriteScreen() {
+	u32 pitch = (screen->pitch) / 2;
+	u16* dstBuf = (u16*) screen->pixels;
+	u16* pix;
+	u8* src = ScreenBuffer;
+	int y, x;
+	for (y = 0; y < LCD_HEIGHT * 2 + 16; y++) {
+		pix = dstBuf + pitch * y;
+		for (x = 0; x < LCD_WIDTH ; x++) {
+			*pix = (*src) ? 0x0000 : 0xffff;
+			pix++;
+			src++;
+		}
+	}
+	SDL_UpdateRect(screen, 0, 0, 0, 0);
+
+}
+
+int  main()
 {
-	WNDCLASS wc;
-	MSG msg;
-	HACCEL hAccelTable;
-	HANDLE hFile;
-	HRSRC hr;
-	HGLOBAL hg;
 	char *p;
 	int xx,yy;
 
-	lRam=VRam;
 	stop_func=0;
 	func_top=0;
+	pLAVA = malloc(128 * 1024);
+	/*
 	CommandLine=GetCommandLine();
 	p=strstr(CommandLine,"/S");
 	if (p) stop_line=getnumber(p+2);
@@ -176,24 +126,33 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 	if (p) CommandLine=p+2;
 	else CommandLine=0;
 	hwnd_main=0;
-	if ((pAllLAVA=malloc(0x100000))==0) {
+	*/
+	/*
+	pAllLAVA = AllLAVA;
+	
+	if ((pAllLAVA=malloc(200 * 1024))==0) {
 		FATAL("内存不足!");
 		return 0;
 	} //为LAVA程序申请1M内存,以后可以加大。
-	task[0].pLAVA=pAllLAVA;
+	*/
+	task[0].pLAVA=pLAVA;
 
-	hInstan=hInstance;
-	GetFcePath();
+
+	//hInstan=hInstance;
+	//GetFcePath();
 	
+	/*
 	hr=FindResource(NULL,(char *)IDR_BIN1,"BIN");
-	hg=LoadResource(NULL,hr);
+	hg=LoadResource(NULL,hr);*/
+	byte* hg = getLVMBinPointer();
 	ascii=hg;
 	ascii8=ascii+1536;
 	gbfont=ascii8+2048;
 	gbfont16=gbfont+81*94*24;
 	pinyin=gbfont16+81*94*32+0x3e+6400;
-	memcpy(ScreenKey,gbfont16+81*94*32+0x3e,6400);
+	//memcpy(ScreenKey,gbfont16+81*94*32+0x3e,6400);
 
+	/*
 	strcpy(Ini,FcPath);
 	strcat(Ini,"lavax.ini");
 	if ((hFile=CreateFile(Ini,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_ARCHIVE,NULL))!=INVALID_HANDLE_VALUE)
@@ -218,14 +177,27 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 	strcpy(CheatPath,FcPath);
 	strcat(CheatPath,"Cheat\\");
 	CreateDirectory(CheatPath,NULL);
-	FREQ*=1000000;
+	*/
+	IdleParam = 9;
+	FREQ = PLAT_TICK_PERIOD_MS * 1000;
 	FREQ60=FREQ/60;
 	FREQ256=FREQ/256;
 	TVSCAN=0;
-	CHECKRAM=1;
-	CHEATUSE=1;
+	CHEATUSE=0;
 	EmuRunning=0;
 	InitScreen();
+	LoadLavOrPacFile("boot.lav");
+#ifdef USE_SDL
+	SDL_Init(SDL_INIT_VIDEO);
+	screen = SDL_SetVideoMode(320, 240, 16, SDL_SWSURFACE);
+	SDL_Event evt;
+	while (1) {
+		SDL_PollEvent(&evt);
+		EmuRun();
+	}
+#endif
+
+	/*
 	ZeroMemory(&wc,sizeof(wc));
 	wc.lpfnWndProc=(WNDPROC)WndProc;
 	wc.hInstance=hInstan;
@@ -246,6 +218,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 	PauseFlag=1;
 	hAccelTable=LoadAccelerators(hInstance,(LPCTSTR)IDR_ACCELERATOR1);
 	
+	
 	if (CommandLine) FileOpenX();
 	while(TRUE) {
 		if (PeekMessage(&msg,NULL,0,0,PM_NOREMOVE)) {
@@ -261,7 +234,8 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 	GetCurrentDirectory(MAX_PATH,RomPath);
 	WritePrivateProfileString("ROM","Directory",RomPath,Ini);
 	if (hwnd_ide) SendMessage(hwnd_ide,WM_STAREND,0,0);
-	return msg.wParam;
+	*/
+	return 0;
 }
 
 int LavOpen(FILE *fp)
@@ -273,7 +247,7 @@ int LavOpen(FILE *fp)
 	fseek(fp,0,SEEK_SET);
 	fread(pLAVA,1,filelen,fp);
 	*(pLAVA+filelen)=0;
-	pNextLAVA=pLAVA+filelen+16;
+	//pNextLAVA=pLAVA+filelen+16;
 	fclose(fp);
 	return 1;
 }
@@ -341,7 +315,7 @@ int UnPac(char *pacname,char *zname)
 			p=NULL;
 			for (j=0;j<60;j++) {
 				if (Path[j]=='/') {
-					Path[j]='\\';
+					//Path[j]='\\';
 					p=Path+j;
 				}
 			}
@@ -357,10 +331,10 @@ int UnPac(char *pacname,char *zname)
 			if (p) {
 				for (j=0;j<60;j++) {
 					if (!fname[j]) break;
-					if (fname[j]=='\\') {
+					if (fname[j]=='/') {
 						fname[j]=0;
-						CreateDirectory(fname,NULL);
-						fname[j]='\\';
+						mkdir(fname,NULL);
+						fname[j]='/';
 					}
 				}
 			}
@@ -379,59 +353,52 @@ int UnPac(char *pacname,char *zname)
 	return 1;
 }
 
-void FileOpen()
+int LoadLavOrPacFile(char* fname)
 {
 	FILE *fp;
 	long SizeRead;
 	byte t[32];
 	char zname[MAX_PATH];
-
-	ZeroMemory(&ofn,sizeof(OPENFILENAME));
-	ofn.lStructSize=sizeof(OPENFILENAME);
-	ofn.hwndOwner=hwnd_main;
-	ofn.hInstance=hInstan;
-	ofn.lpstrDefExt="lav";
-	ofn.lpstrFilter="LavaX文件 (*.lav,*.pac)\0*.lav;*.pac\0所有文件 (*.*)\0*.*\0";
-	ofn.lpstrFile=RomName;
-	ofn.nMaxFile=MAX_PATH;
-	ofn.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|
-              OFN_LONGNAMES|OFN_EXPLORER|OFN_HIDEREADONLY;
-	ofn.lpstrTitle="打开LavaX文件";
-	if (GetOpenFileName(&ofn)==0) return;
-	strcpy(zname,RomName);
+	strcpy(zname, fname);
 abc:
 	if ((fp=fopen(zname,"rb"))==NULL) {
 		FATAL("无法打开LavaX文件!");
-		return;
+		FATAL_printf("%s\n", zname);
+		return 1;
 	}
 	fseek(fp,0,SEEK_SET);
 	SizeRead=fread(t,1,16,fp);
 	if (t[0]=='L' && t[1]=='A' && t[2]=='V' &&
 		t[3]==18 && SizeRead==16) {
 		if (EmuRunning) CloseRom();
-		pLAVA=pAllLAVA;
-		if (!LavOpen(fp)) return;
+		//pLAVA=pAllLAVA;
+		if (!LavOpen(fp)) return 2;
 	} else if (t[0]=='P' && t[1]=='A' && t[2]=='C' &&
 		t[3]==' ' && SizeRead==16) {
 		fclose(fp);
-		if (!UnPac(RomName,zname)) return;
-		if (zname[0]==0) return;
+		if (!UnPac(RomName,zname)) return 1;
+		if (zname[0]==0) return 1;
 		goto abc;
 	} else {
 		FATAL("不是有效的LavaX文件!");
 		fclose(fp);
-		return;
+		return 1;
 	}
 	task_lev=0;
 	EmuRunning=1;
 	PauseFlag=0;
-	pRomName=RomName+ofn.nFileOffset;
+
+	pRomName=RomName;//+ofn.nFileOffset;
+	/*
 	if (ofn.nFileExtension)
 		*(RomName+ofn.nFileExtension-1)=0;
+		*/
 	RomReset();
-	chtLoad();
+	return 0;
+	//chtLoad();
 }
 
+/*
 int TaskOpen(char *name)
 {
 	FILE *fp;
@@ -451,7 +418,10 @@ int TaskOpen(char *name)
 	}
 	return 0;
 }
+*/
 
+
+#if 0
 void FileOpenX()
 {
 	FILE *fp;
@@ -493,7 +463,9 @@ void FileOpenX()
 	pRomName=RomName;
 	chtLoad();
 }
+#endif
 
+#if 0
 LRESULT CALLBACK AboutProc(HWND hWnd,UINT message,WPARAM wParam,LPARAM lParam)
 {
 	switch (message)
@@ -513,6 +485,7 @@ LRESULT CALLBACK AboutProc(HWND hWnd,UINT message,WPARAM wParam,LPARAM lParam)
 	}
 	return TRUE;
 }
+
 
 LRESULT CALLBACK WndProc(HWND hWnd,UINT message,WPARAM wParam,LPARAM lParam)
 {
@@ -789,10 +762,14 @@ LRESULT CALLBACK WndProc(HWND hWnd,UINT message,WPARAM wParam,LPARAM lParam)
    }
    return 0;
 }
+#endif
 
+#ifdef USE_SDL
+
+#include <windows.h>
 void EmuRun()
 {
-	HDC hdc;
+
 	unsigned long t;
 	int ReFresh,i;
 	byte key_bak;
@@ -800,9 +777,10 @@ void EmuRun()
 	static byte num_tbl[]="bnmghjtyu";
 
 	if (!EmuRunning || PauseFlag) {
-		Sleep(1);
+		platSleep(1);
 		return;
 	}
+	/*
 	if (IdleParam) {
 		_asm rdtsc
 		_asm mov t,eax
@@ -812,20 +790,18 @@ void EmuRun()
 			_asm mov times,eax
 			return;
 		}
-	}
-	_asm rdtsc
-	_asm mov t,eax
+	}*/
+	t = platGetTickCount();
 	if (t-timel<FREQ60)
 		ReFresh=0;
 	else {
 		ReFresh=1;
 		timel=t;
 	}
-	if (CHEATUSE) chtExe();
-	if (delay) {
+	if (lDelay) {
 		if (t-timed>=FREQ256) {
 			timed=t;
-			delay--;
+			lDelay--;
 		}
 	} else lavRun();
 	if (ReFresh) {
@@ -835,10 +811,8 @@ void EmuRun()
 			CurFrame=0;
 			mesDrawTime();
 		}
-		
-		hdc=GetDC(hwnd_main);
-		WriteScreen(hdc,0);
-		ReleaseDC(hwnd_main,hdc);
+	
+		WriteScreen(0);
 		memcpy(old_keyb,cur_keyb,256);
 		GetKeyboardState(cur_keyb);
 		if (lav_key<128) {
@@ -870,4 +844,4 @@ void EmuRun()
 	}
 	if (!EmuRunning) CloseRom();
 }
-
+#endif

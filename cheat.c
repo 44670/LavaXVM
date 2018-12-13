@@ -1,3 +1,4 @@
+#if 0
 #include "resource.h"
 #include "define.h"
 
@@ -349,3 +350,4 @@ LRESULT CALLBACK ChtEdit(HWND hWnd,UINT message,WPARAM wParam,LPARAM lParam)
 	}
 	return TRUE;
 }
+#endif

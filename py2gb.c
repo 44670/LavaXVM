@@ -13,7 +13,7 @@ byte *pinyin;
  * 折半查找输入串的序列号
  * 查不到的话返回0xffff
  * --------------------------*/
-word get_seq_no(byte *InputBuffer)
+u16 get_seq_no(byte *InputBuffer)
 {
 	byte *ofs;
 	int i;
@@ -50,14 +50,14 @@ word get_seq_no(byte *InputBuffer)
 
 unsigned long GetGBCodeByPY( unsigned int pos, byte *InputBuffer, byte *OutBuffer )
 {
-	word sum;			//gb 个数
-	word gbidx[2];			//gb idx
-	word seqno;
+	u16 sum;			//gb 个数
+	u16 gbidx[2];			//gb idx
+	u16 seqno;
 	byte *gbofs;		//gb 码值的sector and offset
 	byte tmpidx[5];
 	union {
-		a32 value;
-		word chr[2];
+		u32 value;
+		u16 chr[2];
 	} rtn;
 
 	if( *InputBuffer == 0) {

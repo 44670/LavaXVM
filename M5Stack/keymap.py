@@ -11,12 +11,16 @@ for ch in range(ord('A'), ord('Z') + 1):
 km[13] = 13 # ENTER
 km[32] = 13 # SPACE => ENTER
 
-# k, m, $, n was mapped to direction buttons, use Fn+k/m/n or aA+k/m/n to input original keys
+# k, m, $, n was mapped to direction buttons, use Fn+k/m/n/j/l or aA+k/m/n/j/l to input original keys
 km[ord('k')] = 20 # k => UP
 km[ord('m')] = 21 # m => DOWN
 km[ord('$')] = 22 # $ => RIGHT
 km[ord('n')] = 23 # n => LEFT
+km[ord('j')] = 19 # j => PgUp
+km[ord('l')] = 14 # l => PgDn
+km[182] = ord('j')
 km[183] = ord('k')
+km[184] = ord('l')
 km[192] = ord('m')
 km[191] = ord('n')
 

@@ -61,6 +61,8 @@ int platFmkdir(char* path);
 int platFclose(void* fp);
 u32 platFgetattr(void* fp);
 int platFtell(void* fp);
+int platGetDirFileCount(char* path);
+int platGetDirFileName(char* buf, char* path, int idx);
 
 #define PLAVA_SIZE (96 * 1024)
 #define LRAM_SIZE (32 * 1024)

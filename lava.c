@@ -910,13 +910,13 @@ void push_llong()
 
 void push_text()
 {
-	lRam[eval_stack+eval_top++]=0;
-	lRam[eval_stack+eval_top++]=0;
-	lRam[eval_stack+eval_top++]=0;
-	lRam[eval_stack+eval_top++]=0;
-	FATAL("LavaX3.3版起不支持_TEXT");
-	ramuses=0; //确保无法通过认证
-	bad_exit();
+	lRam[eval_stack+eval_top++]=(TextBuffer) & 0xFF;
+	lRam[eval_stack+eval_top++]=(TextBuffer >> 8) & 0xFF;
+	lRam[eval_stack+eval_top++]=(TextBuffer >> 16) & 0xFF;
+	lRam[eval_stack+eval_top++]=(TextBuffer >> 24) & 0xFF;
+	//FATAL("LavaX3.3版起不支持_TEXT");
+	//ramuses=0; //确保无法通过认证
+	//bad_exit();
 }
 
 void push_graph() //返回0表示不支持_GRAPH
@@ -4300,6 +4300,7 @@ void c_getfilenum()
 
 	get_name();
 	a1 = -1;
+
 #if 0
 	if (FileName[0]==0) a1=-1;
 	else {
@@ -4761,7 +4762,12 @@ void c_exec()
 	set=a1;
 	get_val2();
 	get_name();
-	a1=-1;
+	a1 = -1;
+	if (!FileName[0]) {
+		put_val();
+		return;
+	}
+	/*
 	if (!FileName[0] || (task_lev==0 && RamBits==16)) { //16位小RAM无法加载执行lav程序
 		put_val();
 		return;
@@ -4769,7 +4775,8 @@ void c_exec()
 	if (task_lev && (task[task_lev].attrib&0x80)) {
 		put_val();
 		return;
-	}
+	}*/
+	LoadLavOrPacFile(FileName);
 	/*
 	if (LoadLavOrPacFile(FileName)) {
 		LoadLavOrPacFile("boot.lav");

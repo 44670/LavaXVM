@@ -416,7 +416,8 @@ boolean FtpServer::processCommand()
 				File file = root.openNextFile();
 				while(file){
 					if(file.isDirectory()){
-						data.println( "+r,s <DIR> " + String(file.name()));
+            data.printf("drwxr-xr-x 1 root root %d Jan 01 01:01 %s\r\n", 512, file.name());
+						//data.println( "+r,s <DIR> " + String(file.name()));
 						// Serial.print("  DIR : ");
 						// Serial.println(file.name());
 						// if(levels){
@@ -427,8 +428,7 @@ boolean FtpServer::processCommand()
 						fn = file.name();
 						// fn.remove(0, 1);
 						fs = String(file.size());
-						data.println( "+r,s" + fs);
-						data.println( ",\t" + fn );
+            data.printf("-rwxr-xr-x 1 root root %d Jan 01 01:01 %s\r\n", file.size(), file.name());
 						nm ++;
 					}
 					file = root.openNextFile();

@@ -32,29 +32,7 @@ int ext_num;
 
 int get_total_files(char *path)
 {
-	return 0;
-#if 0
-	FILE_INFO file_info;
-	HANDLE find_handle;
-	char full_name[MAX_PATH];
-	int total;
-
-	total=1;
-	strcpy(full_name,path);
-	strcat(full_name,"*.*");
-	find_handle=FIND_FIRST(full_name,&file_info);
-	while (find_handle!=INVALID_HANDLE_VALUE) {
-		if (strcmp(FILE_NAME(file_info),".")==0) ;
-		else if (strcmp(FILE_NAME(file_info),"..")==0) ;
-		else if (strlen(FILE_NAME(file_info))>14) ; //文件名超过14个字符
-		else total++;
-		if (FIND_NEXT(&file_info)==0) {
-			FindClose(find_handle);
-			break;
-		}
-	}
-	return total;
-#endif
+	return platGetDirFileCount(path);
 }
 
 
@@ -109,6 +87,17 @@ int if_ext_name(char *name)
 
 int get_total_files_ex(char *path)
 {
+	char buf[MAX_PATH];
+	int allFiles = get_total_files(path);
+	int i = 0;
+	int cnt = 0;
+	for (i = 0; i < allFiles; i++) {
+		platGetDirFileName(buf, path, i);
+		if (if_ext_name(buf)) {
+			cnt++;
+		}
+	}
+	return cnt;
 #if 0
 	FILE_INFO file_info;
 	HANDLE find_handle;
@@ -138,7 +127,9 @@ int get_total_files_ex(char *path)
 
 
 void get_file_name(char *path,int index,char *name)
-{
+{	
+	name[0] = 0;
+	platGetDirFileName(name, path, index);
 #if 0
 	FILE_INFO file_info;
 	HANDLE find_handle;
@@ -170,11 +161,24 @@ void get_file_name(char *path,int index,char *name)
 		}
 	}
 #endif
-	name[0]=0;
 }
 
 void get_file_name_ex(char *path,int index,char *name,int len)
 {
+	char buf[MAX_PATH];
+	int allFiles = get_total_files(path);
+	int i = 0;
+	int cnt = 0;
+	for (i = 0; i < allFiles; i++) {
+		platGetDirFileName(buf, path, i);
+		if (if_ext_name(buf)) {
+			if (cnt == index) {
+				strncpy(name, buf, len - 1);
+				return;
+			}
+			cnt++;
+		}
+	}
 #if 0
 	FILE_INFO file_info;
 	HANDLE find_handle;
@@ -216,14 +220,18 @@ void get_file_name_ex(char *path,int index,char *name,int len)
 void disp_file(char *path)
 {
 	int i;
-	char name[16];
+	char name[MAX_PATH];
 
 	memset(lRam+TextBuffer,' ',curr_CPR*curr_RPS);
+	printf("curr_RPS: %d\n", curr_RPS);
 	for (i=0;i<curr_RPS;i++) {
+		printf("i: %d\n", i);
+		printf("%d %d\n", i + first_file, total_file);
 		if (i+first_file<total_file) {
+			
 			get_file_name(path,i+first_file,name);
 			if (name[0])
-				memcpy(lRam+TextBuffer+i*curr_CPR,name,strlen(name));
+				memcpy(lRam+TextBuffer+i*curr_CPR,name,(strlen(name) > 16) ? 16 : strlen(name));
 		}
 	}
 	update_lcd_0();

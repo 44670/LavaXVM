@@ -2,84 +2,115 @@
 
 #include <M5Stack.h>
 
-#include <stdio.h>
-#include <string.h>
-#include <stdint.h>
-#include <sys/unistd.h>
-#include <sys/stat.h>
+#include "driver/sdmmc_host.h"
+#include "driver/sdspi_host.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
-#include "driver/sdmmc_host.h"
-#include "driver/sdspi_host.h"
 #include "sdmmc_cmd.h"
+#include <dirent.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/unistd.h>
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 extern "C" {
-u32 platGetTickCount() {
-	return xTaskGetTickCount();
+u32 platGetTickCount() { return xTaskGetTickCount(); }
+
+void platSleep(u32 ms) { vTaskDelay(ms / portTICK_PERIOD_MS); }
+
+u32 platGetKeyboardState() { return 0; }
+
+u32 platGetFileAttributes(char *path) { return 0; }
+
+void *platFopen(char *path, char *mode) {
+  printf("fopen: %s %s\n", path, mode);
+  return fopen(path, mode);
 }
 
-void platSleep(u32 ms) {
-	vTaskDelay(ms / portTICK_PERIOD_MS);
+int platFwrite(void *fp, u8 *buf, int size) {
+  return fwrite(buf, 1, size, (FILE *)fp);
 }
 
-u32 platGetKeyboardState() {
-	return 0;
+int platFread(void *fp, u8 *buf, int size) {
+  return fread(buf, 1, size, (FILE *)fp);
 }
 
-u32 platGetFileAttributes(char* path) {
-	return 0;
+int platFseek(void *fp, int offset, int mode) {
+  return fseek((FILE *)fp, offset, mode);
 }
 
-void* platFopen(char* path, char* mode) {
-	printf("fopen: %s %s\n", path, mode);
-    return new File(SD.open(path,  mode));
+int platFtell(void *fp) { return ftell((FILE *)fp); }
+
+int platFdelete(char *path) {
+  return unlink(path);
+  // return !SD.remove(path);
 }
 
-int platFwrite(void* fp, u8* buf, int size) {
-    return ((File*)fp) -> write(buf, size);
-	//return SD.write(buf, 1, size, fp);
+u32 platFgetlastwritetime(void *fp) { return 0; }
+
+int platFclose(void *fp) {
+
+  fclose((FILE *)fp);
+  return 0;
 }
 
-int platFread(void* fp, u8* buf, int size) {
-    return ((File*)fp) -> read(buf, size);
-	//return fread(buf, 1, size, fp);
+u32 platFgetattr(void *fp) { return 0; }
+
+int platFmkdir(char *path) { return mkdir(path, 0755); }
+
+
+static char* formatDirPath(char* path) {
+  static char buf[MAX_PATH];
+  strcpy(buf, path);
+  int len = strlen(buf);
+  if (len > 0) {
+    if (buf[len-1] == '/') {
+      buf[len-1] = 0;
+    }
+  }
+  return buf;
+}
+int platGetDirFileCount(char *path) {
+  DIR *dir;
+  struct dirent *entry;
+  int cnt = 0;
+
+  path = formatDirPath(path);
+  if ((dir = opendir(path)) == NULL) {
+    return 0;
+  }
+  while ((entry = readdir(dir)) != NULL) {
+    cnt++;
+  }
+  closedir(dir);
+  return cnt;
 }
 
-int platFseek(void* fp, int offset, int mode) {
-    return ((File*)fp)->seek(offset, (fs::SeekMode) mode);
-	//return fseek(fp, offset, mode);
+int platGetDirFileName(char *buf, char *path, int idx) {
+  buf[0] = 0;
+	DIR *dir;
+	struct dirent *entry;
+	int cnt = 0;
+
+  path = formatDirPath(path);
+  if ((dir = opendir(path)) == NULL) {
+    return 0;
+  }
+  while ((entry = readdir(dir)) != NULL) {
+    if (cnt == idx) {
+      strcpy(buf, entry->d_name);
+      closedir(dir);
+      return 0;
+    }
+    cnt++;
+  }
+  closedir(dir);
+  return 0;
 }
-
-int platFtell(void* fp) {
-    return ((File*)fp)->position();
-}
-
-
-
-int platFdelete(char* path) {
-	return !SD.remove(path);
-}
-
-u32 platFgetlastwritetime(void* fp) {
-	return 0;
-}
-
-int platFclose(void* fp) {
-	((File*)fp)->close();
-	return 0;
-}
-
-u32 platFgetattr(void* fp) {
-	return 0;
-}
-
-int platFmkdir(char* path) {
-    return !SD.mkdir(path);
-}
-
 }

@@ -8,7 +8,7 @@
 #
 
 
-COMPONENT_OBJS := ESP8266FtpServer.o platform.o main.o ../../filelist.o ../../lava.o ../../message.o ../../py2gb.o ../../screen.o
+COMPONENT_OBJS :=  platform.o main.o ../../filelist.o ../../lava.o ../../message.o ../../py2gb.o ../../screen.o
 COMPONENT_SRCDIRS := . ../..
 COMPONENT_ADD_INCLUDEDIRS:= . ../..
 

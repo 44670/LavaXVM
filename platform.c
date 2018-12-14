@@ -19,7 +19,7 @@ u32 platGetFileAttributes(char* path) {
 }
 
 void* platFopen(char* path, char* mode) {
-	printf("platFopen: %s\n", platFopen);
+	printf("platFopen: %s\n", path);
 	return fopen(path, mode);
 }
 
@@ -65,9 +65,17 @@ u32 platFgetattr(void* fp) {
 }
 
 int platFmkdir(char* path) {
-#ifdef USE_POSIX_API
-	return mkdir(path, 0755);
-#else
 	return !CreateDirectory(path, NULL);
-#endif
+}
+
+
+
+int platGetDirFileCount(char* path) {
+	
+	return 30;
+}
+
+int platGetDirFileName(char* buf, char* path, int idx) {
+	buf[0] = 0;
+	sprintf(buf, "testfile%d.lav", idx);
 }

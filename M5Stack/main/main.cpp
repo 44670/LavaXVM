@@ -1,4 +1,4 @@
-#include "ESP8266FtpServer.h"
+#include "FTPServer.h"
 #include <M5Display.h>
 #include <M5Stack.h>
 #include <WiFi.h>
@@ -23,6 +23,7 @@
 #include <define.h>
 
 #define TAG ("MAIN")
+#define USE_FTP_SERVER (1)
 
 #if CONFIG_FREERTOS_UNICORE
 #define ARDUINO_RUNNING_CORE 0
@@ -32,15 +33,23 @@
 #define KEYBOARD_I2C_ADDR 0X88
 #define KEYBOARD_INT 5
 
+static u8 lcdBrightness; 
+
+void setBrightness(u8 b) {
+  lcdBrightness = b % 8;
+  M5.Lcd.setBrightness((b == 7) ? 255 : (b * b * 5));
+}
+
 // The setup routine runs once when M5Stack starts up
 void setup() {
 
   // Initialize the M5Stack object
   M5.begin();
   Wire.begin();
-  M5.Lcd.setTextSize(3);
-  // LCD display
+  M5.Lcd.setTextSize(2);
+  // LCD displayr
   M5.Lcd.print("Hello World\n");
+  setBrightness(7);
 }
 
 extern "C" {
@@ -60,6 +69,7 @@ void loopTask(void *pvParameters)
         loop();
     }
 }*/
+
 
 int LoadLavOrPacFile(char *fname);
 void EmuRun();
@@ -199,7 +209,6 @@ int LavOpen(void *fp) {
   return 1;
 }
 
-
 int UnPac(char *pacname, char *zname) {
   void *fp;
   char fname[MAX_PATH];
@@ -211,8 +220,8 @@ int UnPac(char *pacname, char *zname) {
   char Path[64];
   int i, j;
   int have_lav;
-  u8 workBuffer[10240];  // we have allocated 20KB for main task's stack
-  char* p;
+  u8 workBuffer[10240]; // we have allocated 20KB for main task's stack
+  char *p;
 
   have_lav = 0;
   if ((fp = platFopen(zname, "rb")) == NULL) {
@@ -256,7 +265,7 @@ int UnPac(char *pacname, char *zname) {
         }
       }
       M5.Lcd.printf("unpack: %s\n", fname);
-      void* outFp = platFopen(fname, "wb");
+      void *outFp = platFopen(fname, "wb");
       if (!outFp) {
         platFclose(outFp);
         panic("fopen failed.");
@@ -266,14 +275,14 @@ int UnPac(char *pacname, char *zname) {
         if (wSize > sizeof(workBuffer)) {
           wSize = sizeof(workBuffer);
         }
-        printf("%d, %d\n", (int) wSize, (int) filelen);
+        printf("%d, %d\n", (int)wSize, (int)filelen);
         platFread(fp, workBuffer, wSize);
         platFwrite(outFp, workBuffer, wSize);
         filelen -= wSize;
       }
       platFclose(outFp);
     }
-  }  
+  }
   platFclose(fp);
   // platFdelete(zname);
   zname[0] = 0;
@@ -281,6 +290,9 @@ int UnPac(char *pacname, char *zname) {
 }
 
 int LoadLavOrPacFile(char *fname) {
+  if (strcmp(fname, "/sd/poweroff") == 0) {
+    M5.powerOFF();
+  }
   void *fp;
   long SizeRead;
   byte t[32];
@@ -329,18 +341,83 @@ abc:
 }
 
 #include "../keymap_keyboard.h"
+#include "../keymap_gameboy.h"
 
 u8 translateKey(u8 keyval) { return keyboardKeyMap[keyval]; }
 
-void updateKey() {
+static void adjustBrightness() {
+  setBrightness((lcdBrightness + 1) % 8);
+}
+
+#define TYPE_KEYBOARD (0)
+#define TYPE_GAMEBOY (1)
+
+int currentKeyType = TYPE_KEYBOARD;
+
+void updateKeyForGameboy() {
+  static u8 old_keyb[256];
+  Button *btns[] = {&(M5.BtnA), &(M5.BtnB), &(M5.BtnC)};
+  Wire.requestFrom(KEYBOARD_I2C_ADDR, 1); // request 1 byte from keyboard
+  if (Wire.available()) {
+    memcpy(old_keyb, cur_keyb, 256);
+    u8 key_val = 0;
+    key_val = Wire.read();
+    if (key_val == 0x00) {
+      currentKeyType = TYPE_KEYBOARD;
+      return;
+    }
+    for (int i = 0; i < 8 + 3; i++) {
+      u8 keyState = !(key_val & 1);
+      u8 vk = gameboyKeyMap[i];
+      if (i >= 8) {
+        keyState = btns[i-8]->read();
+        if (vk == 0xFF) {
+          if (btns[i-8]->wasPressed()) {
+            adjustBrightness();
+          }
+          vk = 0;
+        }
+      }
+      if (vk) {
+        cur_keyb[vk] = keyState ? 0x80 : 0x00;
+      }
+      key_val >>= 1;
+    }
+    for (int i = 0; i < 256; i++) {
+      if (((old_keyb[i]^cur_keyb[i])&0x80) && (cur_keyb[i]&0x80)) {
+        lav_key = 0x80 | i;
+      }
+    }
+  } 
+}
+
+void updateKeyForKeyboard() {
+  int i, tmp;
+  for (i = 0; i < 255; i++) {
+    if (cur_keyb[i] & 0x80) {
+      tmp = (cur_keyb[i] & 0x0f);
+      if (tmp <= 0) {
+        cur_keyb[i] = 0;
+      } else {
+        cur_keyb[i] = 0x80 | (u8)tmp;
+      }
+    }
+  }
   Wire.requestFrom(KEYBOARD_I2C_ADDR, 1); // request 1 byte from keyboard
   if (Wire.available()) {
     uint8_t key_val = Wire.read();
+    if (key_val == 0xFF) {
+      currentKeyType = TYPE_GAMEBOY;
+      return;
+    }
     if (key_val != 0) {
       printf("key_val: %d\n", key_val);
       u8 translatedKey = translateKey(key_val);
-      if (translatedKey != 0) {
+      if (translatedKey == 0xFF) {
+        adjustBrightness();
+      } else if (translatedKey != 0) {
         lav_key = 0x80 | translatedKey;
+        cur_keyb[translatedKey] = 0x80; // keep pressed for 1 frame.
       }
     }
   }
@@ -348,7 +425,7 @@ void updateKey() {
 
 void EmuRun() {
 
-  unsigned long t;
+  u32 t;
   int ReFresh, i;
   static byte direct_key[] = {23, 20, 22, 21};
   static byte num_tbl[] = "bnmghjtyu";
@@ -359,20 +436,30 @@ void EmuRun() {
   }
 
   t = platGetTickCount();
-  if (lDelay) {
+  if (lDelay_ms) {
+    u32 timePassed = (t - timed) * PLAT_TICK_PERIOD_MS;
+    lDelay_ms = (lDelay_ms > timePassed) ? (lDelay_ms - timePassed) : 0;
+    timed = t;
+    /*
     if (t - timed >= FREQ256) {
       timed = t;
       lDelay--;
+    }*/
+  }
+  if (lDelay_ms <= 30) {
+    if (lDelay_ms) {
+      Sleep(lDelay_ms);
+      lDelay_ms = 0;
     }
-  } else
     lavRun();
-
+  }
   t = platGetTickCount();
-  if (t - timel < FREQ60)
-    ReFresh = 0;
-  else {
+  // fore refresh when delay > 30ms
+  if ((t - timel >= FREQ60) || (lDelay_ms > 30)) {
     ReFresh = 1;
     timel = t;
+  } else {
+    ReFresh = 0;
   }
 
   if (ReFresh) {
@@ -384,26 +471,29 @@ void EmuRun() {
     }
     WriteScreen(0);
     Sleep(1);
-    updateKey();
+    updateKeyForKeyboard();
   }
 
   if (!EmuRunning)
     CloseRom();
 }
 
-/*
-void ftpServerMainLoop() {
-  FtpServer ftpSrv;
-  WiFi.softAP("lava", "hellolava");
-  M5.Lcd.println("IP: ");
-  M5.Lcd.println(WiFi.softAPIP());
-  ftpSrv.begin("lava", "hellolava");
-  while (1) {
-    ftpSrv.handleFTP();
-    Sleep(1);
-  }
-}*/
 
+
+void ftpServerMainLoop() {
+  WiFi.softAP("lava", "hellolava");
+  M5.Lcd.print("FTP: ");
+  M5.Lcd.println(WiFi.softAPIP());
+  M5.Lcd.println("Port: 9876");
+  FTPServer *ftpServer = new FTPServer();
+  ftpServer->setCallbacks(new FTPFileCallbacks());
+  ftpServer->setCredentials("lava", "hellolava");
+  ftpServer->setPort(9876);
+  ftpServer->start();
+  while (1) {
+    Sleep(1000);
+  }
+}
 
 void app_main() {
 
@@ -417,13 +507,10 @@ void app_main() {
   }
   printf("mappedResourceData: %p\n", mappedResourceData);
   if (M5.BtnA.read()) {
-    //ftpServerMainLoop();
+    ftpServerMainLoop();
   }
   lavaMainLoop();
-
   // xTaskCreatePinnedToCore(loopTask, "loopTask", 8192, NULL, 1, NULL,
   // ARDUINO_RUNNING_CORE);
 }
-
-
 }

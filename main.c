@@ -97,6 +97,9 @@ void WriteScreen() {
 	for (y = 0; y < LCD_HEIGHT * 2 + 16; y++) {
 		pix = dstBuf + pitch * y;
 		for (x = 0; x < LCD_WIDTH ; x++) {
+			if (y == 80) {
+				*src = 1;
+			}
 			*pix = (*src) ? 0x0000 : 0xffff;
 			pix++;
 			src++;
@@ -798,10 +801,10 @@ void EmuRun()
 		ReFresh=1;
 		timel=t;
 	}
-	if (lDelay) {
+	if (lDelay_ms) {
 		if (t-timed>=FREQ256) {
 			timed=t;
-			lDelay--;
+			lDelay_ms--;
 		}
 	} else lavRun();
 	if (ReFresh) {

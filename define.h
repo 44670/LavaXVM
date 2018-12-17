@@ -40,7 +40,6 @@ typedef int32_t s32;
 
 typedef uint8_t byte;
 
-#define CheckAddr(a,b,c) 
 
 
 #define PLAT_SEEK_SET (0)
@@ -66,6 +65,7 @@ int platGetDirFileName(char* buf, char* path, int idx);
 
 #define PLAVA_SIZE (96 * 1024)
 #define LRAM_SIZE (32 * 1024)
+#define GRAPH_BUF_SIZE (2048) //align(1024, (160 / 8 * 80))
 
 #define MAX_PATH (256)
 #define CALLBACK
@@ -148,7 +148,7 @@ extern byte ScreenKey[6400];
 #define BmpData ((byte*)ScreenBuffer)
 extern u16 graph_mode;
 extern byte* pLAVA;
-extern s32 lDelay;
+extern s32 lDelay_ms;
 extern u32 timed;
 extern byte old_keyb[256],cur_keyb[256];
 extern byte lav_key;

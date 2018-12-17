@@ -18,11 +18,20 @@ km[ord('$')] = 22 # $ => RIGHT
 km[ord('n')] = 23 # n => LEFT
 km[ord('j')] = 19 # j => PgUp
 km[ord('l')] = 14 # l => PgDn
+km[ord('u')] = 28 # u => F1
+km[ord('i')] = 29 # i => F2
+km[ord('o')] = 30 # o => F3
+km[ord('p')] = 31 # p => F4
+
 km[182] = ord('j')
 km[183] = ord('k')
 km[184] = ord('l')
 km[192] = ord('m')
 km[191] = ord('n')
+km[ord('{')] = ord('u')
+km[ord('}')] = ord('i')
+km[ord('[')] = ord('o')
+km[ord(']')] = ord('p')
 
 km[ord('1')] = ord('t')
 km[ord('2')] = ord('y')
@@ -37,15 +46,12 @@ km[ord('0')] = ord('0')
 km[189] = 19 # Fn+V => PgUp
 km[190] = 14 # Fn+B => PgDn
 km[ord('.')] = ord('.') # Sym+M => .
-km[ord('{')] = 112 # Fn+U => F1
-km[ord('}')] = 113 # Fn+I => F2
-km[ord('[')] = 114 # Fn+O => F3
-km[ord(']')] = 115 # Fn+P => F4
-km[ord('~')] = 27 # Fn+Q => ESC
+
 km[8] = 27 # Backspace => ESC
 km[186] = 25 # Fn+Z => Help
 km[187] = 26 # Fn+X => Shift
 km[188] = 18 # Fn+C => Input Method
+km[ord('~')] = 0xFF # Fn+Q => Brightness
 
 print('keyMap: ')
 for i in range(0, 256):

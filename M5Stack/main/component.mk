@@ -8,8 +8,10 @@
 #
 
 
-COMPONENT_OBJS :=  platform.o main.o ../../filelist.o ../../lava.o ../../message.o ../../py2gb.o ../../screen.o
+COMPONENT_OBJS :=  FTPCallbacks.o FTPServer.o platform.o main.o ../../filelist.o ../../lava.o ../../message.o ../../py2gb.o ../../screen.o
 COMPONENT_SRCDIRS := . ../..
 COMPONENT_ADD_INCLUDEDIRS:= . ../..
 
 CFLAGS = -O3  -mlongcalls -Wno-unused-variable -Wno-format -Wno-pointer-sign
+
+CPPFLAGS += -Wno-format

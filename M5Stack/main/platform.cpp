@@ -62,16 +62,18 @@ int platFclose(void *fp) {
 
 u32 platFgetattr(void *fp) { return 0; }
 
-int platFmkdir(char *path) { return mkdir(path, 0755); }
+int platFmkdir(char *path) {
+  printf("mkdir: %s\n", path);
+  return mkdir(path, 0755);
+}
 
-
-static char* formatDirPath(char* path) {
+static char *formatDirPath(char *path) {
   static char buf[MAX_PATH];
   strcpy(buf, path);
   int len = strlen(buf);
   if (len > 0) {
-    if (buf[len-1] == '/') {
-      buf[len-1] = 0;
+    if (buf[len - 1] == '/') {
+      buf[len - 1] = 0;
     }
   }
   return buf;
@@ -94,9 +96,9 @@ int platGetDirFileCount(char *path) {
 
 int platGetDirFileName(char *buf, char *path, int idx) {
   buf[0] = 0;
-	DIR *dir;
-	struct dirent *entry;
-	int cnt = 0;
+  DIR *dir;
+  struct dirent *entry;
+  int cnt = 0;
 
   path = formatDirPath(path);
   if ((dir = opendir(path)) == NULL) {
